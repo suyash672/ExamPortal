@@ -1,0 +1,8 @@
+{
+  "name": "examshield",
+  "private": true,
+  "workspaces": [
+    "backend",
+    "frontend"
+  ]
+}
