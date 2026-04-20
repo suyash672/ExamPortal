@@ -42,3 +42,5 @@ moduleRouter.put(
 moduleRouter.delete("/api/modules/:id", requireModuleOwnership, deleteModule);
 
 export default moduleRouter;
+
+//This is module controller file for reference
