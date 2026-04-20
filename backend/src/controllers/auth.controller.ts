@@ -32,10 +32,13 @@ function getRefreshTokenFromCookie(req: Request): string | null {
 }
 
 function getCookieOptions() {
+  const isProduction = process.env.NODE_ENV === "production";
+  const sameSite: "none" | "lax" = isProduction ? "none" : "lax";
+
   return {
     httpOnly: true,
-    sameSite: "strict" as const,
-    secure: process.env.NODE_ENV === "production",
+    sameSite,
+    secure: isProduction,
     maxAge: SEVEN_DAYS_MS
   };
 }
@@ -288,10 +291,11 @@ export async function logout(
       }
     }
 
+    const { httpOnly, sameSite, secure } = getCookieOptions();
     res.clearCookie("refreshToken", {
-      httpOnly: true,
-      sameSite: "strict",
-      secure: process.env.NODE_ENV === "production"
+      httpOnly,
+      sameSite,
+      secure
     });
 
     res.status(200).json({ message: "Logged out" });
