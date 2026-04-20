@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { SubjectModal } from "@/components/teacher/SubjectModal";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { deleteSubject, getSubjects, type SubjectRecord } from "@/lib/api/subjects";
 import { useToast } from "@/components/ui/ToastProvider";
 
@@ -30,6 +31,7 @@ export default function SubjectsPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [selectedSubject, setSelectedSubject] = useState<SubjectRecord | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<SubjectRecord | null>(null);
 
   const loadSubjects = useCallback(async () => {
     setLoading(true);
@@ -49,16 +51,16 @@ export default function SubjectsPage() {
     void loadSubjects();
   }, [loadSubjects]);
 
-  const handleDelete = async (subject: SubjectRecord) => {
-    const confirmed = window.confirm(`Delete subject \"${subject.name}\"?`);
-    if (!confirmed) {
+  const handleDelete = async () => {
+    if (!pendingDelete) {
       return;
     }
 
     try {
-      setDeletingId(subject.id);
-      await deleteSubject(subject.id);
+      setDeletingId(pendingDelete.id);
+      await deleteSubject(pendingDelete.id);
       showToast("Subject deleted");
+      setPendingDelete(null);
       await loadSubjects();
     } catch {
       showToast("Failed to delete subject", "error");
@@ -110,10 +112,23 @@ export default function SubjectsPage() {
         </div>
       ) : subjects.length === 0 ? (
         <div className="rounded-3xl border border-dashed border-slate-300 bg-white px-6 py-12 text-center">
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-slate-500">
+            📚
+          </div>
           <h2 className="text-lg font-semibold text-slate-900">No subjects yet</h2>
           <p className="mt-2 text-sm text-slate-500">
             Create your first subject to begin organizing modules.
           </p>
+          <button
+            type="button"
+            onClick={() => {
+              setSelectedSubject(null);
+              setModalOpen(true);
+            }}
+            className="mt-5 inline-flex items-center justify-center rounded-xl bg-[var(--primary)] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[var(--primary-hover)]"
+          >
+            Create Subject
+          </button>
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
@@ -141,7 +156,7 @@ export default function SubjectsPage() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => void handleDelete(subject)}
+                    onClick={() => setPendingDelete(subject)}
                     disabled={deletingId === subject.id}
                     className="rounded-xl p-2 text-slate-500 transition hover:bg-rose-50 hover:text-rose-600 disabled:cursor-not-allowed disabled:opacity-60"
                     aria-label={`Delete ${subject.name}`}
@@ -189,6 +204,15 @@ export default function SubjectsPage() {
         onOpenChange={setModalOpen}
         subject={selectedSubject}
         onSaved={handleSaved}
+      />
+
+      <ConfirmDialog
+        open={Boolean(pendingDelete)}
+        title="Delete subject"
+        message={`Delete subject "${pendingDelete?.name ?? ""}"?`}
+        loading={Boolean(deletingId)}
+        onCancel={() => setPendingDelete(null)}
+        onConfirm={() => void handleDelete()}
       />
     </div>
   );

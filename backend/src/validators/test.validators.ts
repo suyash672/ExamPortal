@@ -10,9 +10,7 @@ export const createTestSchema = z
   .object({
     title: z.string().trim().min(1).max(200),
     enrollmentKey: z.string().min(4).max(50).regex(/^\S+$/),
-    startTime: z.coerce.date().refine((date) => date > new Date(), {
-      message: "startTime must be in the future"
-    }),
+    startTime: z.coerce.date(),
     endTime: z.coerce.date(),
     durationMinutes: z.number().int().min(1),
     qbRules: z.array(testQbRuleSchema).min(1)

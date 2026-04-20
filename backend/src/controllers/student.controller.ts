@@ -1,18 +1,15 @@
 import { PrismaClient } from "@prisma/client";
-import type { Request, Response } from "express";
-import { z } from "zod";
+import type { NextFunction, Request, Response } from "express";
+import { AppError } from "../lib/AppError";
 import { scoreAttempt } from "../lib/scoring";
 import {
+  beginTestSchema,
   enrollSchema,
   saveAnswerSchema,
   submitAttemptSchema
 } from "../validators/student.validators";
 
 const prisma = new PrismaClient();
-
-const beginTestSchema = z.object({
-  enrollmentId: z.string().uuid()
-});
 
 function nowDate(): Date {
   return new Date();
@@ -137,11 +134,15 @@ async function autoSubmitAttempt(attemptId: string): Promise<number> {
   return result;
 }
 
-export async function getAvailableTests(req: Request, res: Response): Promise<void> {
-  if (!req.user) {
-    res.status(401).json({ message: "Unauthorized" });
-    return;
-  }
+export async function getAvailableTests(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    if (!req.user) {
+      throw new AppError("Unauthorized", 401);
+    }
 
   const now = nowDate();
 
@@ -239,37 +240,41 @@ export async function getAvailableTests(req: Request, res: Response): Promise<vo
     });
   }
 
-  res.status(200).json(result);
+    res.status(200).json(result);
+  } catch (error) {
+    next(error);
+  }
 }
 
-export async function enrollInTest(req: Request, res: Response): Promise<void> {
-  if (!req.user) {
-    res.status(401).json({ message: "Unauthorized" });
-    return;
-  }
+export async function enrollInTest(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    if (!req.user) {
+      throw new AppError("Unauthorized", 401);
+    }
 
-  const parsed = enrollSchema.safeParse(req.body);
-
-  if (!parsed.success) {
-    res.status(400).json({ errors: parsed.error.flatten() });
-    return;
-  }
-
-  const { testId, enrollmentKey } = parsed.data;
+    const { testId, enrollmentKey } = req.body as ReturnType<typeof enrollSchema.parse>;
 
   const test = await prisma.test.findUnique({
     where: { id: testId }
   });
 
-  if (!test || test.enrollmentKey !== enrollmentKey) {
-    res.status(400).json({ message: "Invalid enrollment key" });
-    return;
-  }
+    if (!test || test.enrollmentKey !== enrollmentKey) {
+      throw new AppError("Invalid enrollment key", 400);
+    }
 
-  if (nowDate() >= test.endTime) {
-    res.status(400).json({ message: "Enrollment is closed, test has already ended" });
-    return;
-  }
+    const now = nowDate();
+
+    if (now >= test.startTime) {
+      throw new AppError("Enrollment is closed, test has already started", 400);
+    }
+
+    if (now >= test.endTime) {
+      throw new AppError("Enrollment is closed, test has already ended", 400);
+    }
 
   const existing = await prisma.enrollment.findUnique({
     where: {
@@ -280,42 +285,41 @@ export async function enrollInTest(req: Request, res: Response): Promise<void> {
     }
   });
 
-  if (existing) {
-    res.status(400).json({ message: "Already enrolled" });
-    return;
+    if (existing) {
+      throw new AppError("Already enrolled", 400);
+    }
+
+    const enrollment = await prisma.$transaction(async (tx) => {
+      await tx.test.update({
+        where: { id: testId },
+        data: { isLocked: true }
+      });
+
+      return tx.enrollment.create({
+        data: {
+          studentId: req.user!.id,
+          testId
+        }
+      });
+    });
+
+    res.status(201).json(enrollment);
+  } catch (error) {
+    next(error);
   }
-
-  const enrollment = await prisma.$transaction(async (tx) => {
-    await tx.test.update({
-      where: { id: testId },
-      data: { isLocked: true }
-    });
-
-    return tx.enrollment.create({
-      data: {
-        studentId: req.user!.id,
-        testId
-      }
-    });
-  });
-
-  res.status(201).json(enrollment);
 }
 
-export async function beginTest(req: Request, res: Response): Promise<void> {
-  if (!req.user) {
-    res.status(401).json({ message: "Unauthorized" });
-    return;
-  }
+export async function beginTest(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    if (!req.user) {
+      throw new AppError("Unauthorized", 401);
+    }
 
-  const parsed = beginTestSchema.safeParse(req.body);
-
-  if (!parsed.success) {
-    res.status(400).json({ errors: parsed.error.flatten() });
-    return;
-  }
-
-  const { enrollmentId } = parsed.data;
+    const { enrollmentId } = req.body as ReturnType<typeof beginTestSchema.parse>;
 
   const enrollment = await prisma.enrollment.findFirst({
     where: {
@@ -332,52 +336,48 @@ export async function beginTest(req: Request, res: Response): Promise<void> {
     }
   });
 
-  if (!enrollment) {
-    res.status(404).json({ message: "Enrollment not found" });
-    return;
-  }
+    if (!enrollment) {
+      throw new AppError("Enrollment not found", 404);
+    }
 
   const now = nowDate();
 
-  if (now < enrollment.test.startTime) {
-    res.status(400).json({ message: "Test has not started yet" });
-    return;
-  }
+    if (now < enrollment.test.startTime) {
+      throw new AppError("Test has not started yet", 400);
+    }
 
-  if (now >= enrollment.test.endTime) {
-    res.status(400).json({ message: "Test has ended" });
-    return;
-  }
+    if (now >= enrollment.test.endTime) {
+      throw new AppError("Test has ended", 400);
+    }
 
-  if (enrollment.attempt) {
-    res.status(400).json({ message: "Attempt already started" });
-    return;
-  }
+    if (enrollment.attempt) {
+      throw new AppError("Attempt already started", 400);
+    }
 
   const questionIdsToAssign: string[] = [];
 
-  for (const rule of enrollment.test.testQbRules) {
-    const questions = await prisma.question.findMany({
-      where: {
-        qbId: rule.qbId,
-        deletedAt: null
-      },
-      select: {
-        id: true
-      }
-    });
-
-    if (questions.length < rule.questionsToPick) {
-      res.status(400).json({
-        message: "Insufficient questions in one or more selected question banks"
+    for (const rule of enrollment.test.testQbRules) {
+      const questions = await prisma.question.findMany({
+        where: {
+          qbId: rule.qbId,
+          deletedAt: null
+        },
+        select: {
+          id: true
+        }
       });
-      return;
-    }
 
-    const shuffled = [...questions].sort(() => Math.random() - 0.5);
-    const picked = shuffled.slice(0, rule.questionsToPick);
-    questionIdsToAssign.push(...picked.map((question) => question.id));
-  }
+      if (questions.length < rule.questionsToPick) {
+        throw new AppError(
+          "Insufficient questions in one or more selected question banks",
+          400
+        );
+      }
+
+      const shuffled = [...questions].sort(() => Math.random() - 0.5);
+      const picked = shuffled.slice(0, rule.questionsToPick);
+      questionIdsToAssign.push(...picked.map((question) => question.id));
+    }
 
   const createdAttempt = await prisma.$transaction(async (tx) => {
     const createdAttempt = await tx.attempt.create({
@@ -397,35 +397,40 @@ export async function beginTest(req: Request, res: Response): Promise<void> {
     return { id: createdAttempt.id };
   });
 
-  const attempt = await getOwnedAttempt(createdAttempt.id, req.user.id);
+    const attempt = await getOwnedAttempt(createdAttempt.id, req.user.id);
 
-  if (!attempt) {
-    res.status(404).json({ message: "Attempt not found" });
-    return;
+    if (!attempt) {
+      throw new AppError("Attempt not found", 404);
+    }
+
+    res.status(200).json(serializeAttempt(attempt, now));
+  } catch (error) {
+    next(error);
   }
-
-  res.status(200).json(serializeAttempt(attempt, now));
 }
 
-export async function getAttempt(req: Request, res: Response): Promise<void> {
-  if (!req.user) {
-    res.status(401).json({ message: "Unauthorized" });
-    return;
-  }
+export async function getAttempt(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    if (!req.user) {
+      throw new AppError("Unauthorized", 401);
+    }
 
-  const attemptId = req.params.attemptId;
+  const rawAttemptId = req.params.attemptId;
+  const attemptId = Array.isArray(rawAttemptId) ? rawAttemptId[0] : rawAttemptId;
 
-  if (!attemptId) {
-    res.status(400).json({ message: "attemptId is required" });
-    return;
-  }
+    if (!attemptId) {
+      throw new AppError("attemptId is required", 400);
+    }
 
   let attempt = await getOwnedAttempt(attemptId, req.user.id);
 
-  if (!attempt) {
-    res.status(404).json({ message: "Attempt not found" });
-    return;
-  }
+    if (!attempt) {
+      throw new AppError("Attempt not found", 404);
+    }
 
   if (!attempt.isSubmitted) {
     const now = nowDate();
@@ -441,29 +446,29 @@ export async function getAttempt(req: Request, res: Response): Promise<void> {
       attempt = await getOwnedAttempt(attempt.id, req.user.id);
 
       if (!attempt) {
-        res.status(404).json({ message: "Attempt not found" });
-        return;
+        throw new AppError("Attempt not found", 404);
       }
     }
   }
 
-  res.status(200).json(serializeAttempt(attempt, nowDate()));
+    res.status(200).json(serializeAttempt(attempt, nowDate()));
+  } catch (error) {
+    next(error);
+  }
 }
 
-export async function saveAnswer(req: Request, res: Response): Promise<void> {
-  if (!req.user) {
-    res.status(401).json({ message: "Unauthorized" });
-    return;
-  }
+export async function saveAnswer(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    if (!req.user) {
+      throw new AppError("Unauthorized", 401);
+    }
 
-  const parsed = saveAnswerSchema.safeParse(req.body);
-
-  if (!parsed.success) {
-    res.status(400).json({ errors: parsed.error.flatten() });
-    return;
-  }
-
-  const { attemptId, attemptQuestionId, selectedOptionIds, textAnswer } = parsed.data;
+    const { attemptId, attemptQuestionId, selectedOptionIds, textAnswer } =
+      req.body as ReturnType<typeof saveAnswerSchema.parse>;
 
   const attempt = await prisma.attempt.findFirst({
     where: {
@@ -481,10 +486,9 @@ export async function saveAnswer(req: Request, res: Response): Promise<void> {
     }
   });
 
-  if (!attempt) {
-    res.status(404).json({ message: "Attempt not found" });
-    return;
-  }
+    if (!attempt) {
+      throw new AppError("Attempt not found", 404);
+    }
 
   const attemptQuestion = await prisma.attemptQuestion.findFirst({
     where: {
@@ -504,15 +508,13 @@ export async function saveAnswer(req: Request, res: Response): Promise<void> {
     }
   });
 
-  if (!attemptQuestion) {
-    res.status(404).json({ message: "Attempt question not found" });
-    return;
-  }
+    if (!attemptQuestion) {
+      throw new AppError("Attempt question not found", 404);
+    }
 
-  if (attempt.isSubmitted) {
-    res.status(400).json({ message: "Attempt already submitted" });
-    return;
-  }
+    if (attempt.isSubmitted) {
+      throw new AppError("Attempt already submitted", 400);
+    }
 
   const now = nowDate();
   const timeRemainingSeconds = calculateTimeRemainingSeconds(
@@ -522,22 +524,20 @@ export async function saveAnswer(req: Request, res: Response): Promise<void> {
     attempt.enrollment.test.durationMinutes
   );
 
-  if (timeRemainingSeconds <= 0) {
-    await autoSubmitAttempt(attempt.id);
-    res.status(400).json({ message: "Time expired, test auto-submitted" });
-    return;
-  }
+    if (timeRemainingSeconds <= 0) {
+      await autoSubmitAttempt(attempt.id);
+      throw new AppError("Time expired, test auto-submitted", 400);
+    }
 
   const normalizedSelectedIds = Array.from(new Set(selectedOptionIds ?? []));
 
-  if (attemptQuestion.question.type === "MCQ") {
-    const allowedIds = new Set(attemptQuestion.question.mcqOptions.map((option) => option.id));
+    if (attemptQuestion.question.type === "MCQ") {
+      const allowedIds = new Set(attemptQuestion.question.mcqOptions.map((option) => option.id));
 
-    if (normalizedSelectedIds.some((id) => !allowedIds.has(id))) {
-      res.status(400).json({ message: "One or more selected options are invalid" });
-      return;
+      if (normalizedSelectedIds.some((id) => !allowedIds.has(id))) {
+        throw new AppError("One or more selected options are invalid", 400);
+      }
     }
-  }
 
   const answerRecord = await prisma.attemptAnswer.upsert({
     where: { attemptQuestionId: attemptQuestion.id },
@@ -573,23 +573,23 @@ export async function saveAnswer(req: Request, res: Response): Promise<void> {
     });
   }
 
-  res.status(200).json({ message: "Answer saved" });
+    res.status(200).json({ message: "Answer saved" });
+  } catch (error) {
+    next(error);
+  }
 }
 
-export async function submitAttempt(req: Request, res: Response): Promise<void> {
-  if (!req.user) {
-    res.status(401).json({ message: "Unauthorized" });
-    return;
-  }
+export async function submitAttempt(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    if (!req.user) {
+      throw new AppError("Unauthorized", 401);
+    }
 
-  const parsed = submitAttemptSchema.safeParse(req.body);
-
-  if (!parsed.success) {
-    res.status(400).json({ errors: parsed.error.flatten() });
-    return;
-  }
-
-  const { attemptId } = parsed.data;
+    const { attemptId } = req.body as ReturnType<typeof submitAttemptSchema.parse>;
 
   const attempt = await prisma.attempt.findFirst({
     where: {
@@ -607,29 +607,30 @@ export async function submitAttempt(req: Request, res: Response): Promise<void> 
     }
   });
 
-  if (!attempt) {
-    res.status(404).json({ message: "Attempt not found" });
-    return;
-  }
-
-  if (attempt.isSubmitted) {
-    res.status(400).json({ message: "Attempt already submitted" });
-    return;
-  }
-
-  const result = await scoreAttempt(attempt.id);
-
-  await prisma.attempt.update({
-    where: { id: attempt.id },
-    data: {
-      isSubmitted: true,
-      submittedAt: nowDate(),
-      score: result
+    if (!attempt) {
+      throw new AppError("Attempt not found", 404);
     }
-  });
 
-  res.status(200).json({
-    score: result,
-    totalMarks: attempt.enrollment.test.totalMarks
-  });
+    if (attempt.isSubmitted) {
+      throw new AppError("Attempt already submitted", 400);
+    }
+
+    const result = await scoreAttempt(attempt.id);
+
+    await prisma.attempt.update({
+      where: { id: attempt.id },
+      data: {
+        isSubmitted: true,
+        submittedAt: nowDate(),
+        score: result
+      }
+    });
+
+    res.status(200).json({
+      score: result,
+      totalMarks: attempt.enrollment.test.totalMarks
+    });
+  } catch (error) {
+    next(error);
+  }
 }

@@ -1,5 +1,6 @@
 import { PrismaClient, UserType } from "@prisma/client";
-import type { Request, Response } from "express";
+import type { NextFunction, Request, Response } from "express";
+import { AppError } from "../lib/AppError";
 import { comparePassword, hashPassword } from "../lib/hash";
 import {
   signAccessToken,
@@ -7,7 +8,6 @@ import {
   verifyRefreshToken,
   type AuthRole
 } from "../lib/jwt";
-import { loginSchema, registerSchema } from "../validators/auth.validators";
 
 const prisma = new PrismaClient();
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
@@ -72,210 +72,230 @@ async function findMatchingActiveRefreshToken(
   return null;
 }
 
-export async function register(req: Request, res: Response): Promise<void> {
-  const parsed = registerSchema.safeParse(req.body);
-
-  if (!parsed.success) {
-    res.status(400).json({ errors: parsed.error.flatten() });
-    return;
-  }
-
-  const { name, email, password, role } = parsed.data;
-  const passwordHash = await hashPassword(password);
-
-  if (role === "TEACHER") {
-    const existingTeacher = await prisma.teacher.findUnique({
-      where: { email }
-    });
-
-    if (existingTeacher) {
-      res.status(409).json({ message: "Email already in use" });
-      return;
-    }
-
-    await prisma.teacher.create({
-      data: {
-        name,
-        email,
-        passwordHash
-      }
-    });
-  } else {
-    const existingStudent = await prisma.student.findUnique({
-      where: { email }
-    });
-
-    if (existingStudent) {
-      res.status(409).json({ message: "Email already in use" });
-      return;
-    }
-
-    await prisma.student.create({
-      data: {
-        name,
-        email,
-        passwordHash
-      }
-    });
-  }
-
-  res.status(201).json({ message: "Account created" });
-}
-
-export async function login(req: Request, res: Response): Promise<void> {
-  const parsed = loginSchema.safeParse(req.body);
-
-  if (!parsed.success) {
-    res.status(400).json({ errors: parsed.error.flatten() });
-    return;
-  }
-
-  const { email, password, role } = parsed.data;
-
-  const user =
-    role === "TEACHER"
-      ? await prisma.teacher.findUnique({ where: { email } })
-      : await prisma.student.findUnique({ where: { email } });
-
-  if (!user) {
-    res.status(401).json({ message: "Invalid credentials" });
-    return;
-  }
-
-  const isPasswordValid = await comparePassword(password, user.passwordHash);
-
-  if (!isPasswordValid) {
-    res.status(401).json({ message: "Invalid credentials" });
-    return;
-  }
-
-  const payload = { id: user.id, role };
-  const accessToken = signAccessToken(payload);
-  const refreshToken = signRefreshToken(payload);
-
-  await prisma.refreshToken.create({
-    data: {
-      tokenHash: await hashPassword(refreshToken),
-      userType: role,
-      teacherId: role === "TEACHER" ? user.id : null,
-      studentId: role === "STUDENT" ? user.id : null,
-      expiresAt: new Date(Date.now() + SEVEN_DAYS_MS)
-    }
-  });
-
-  res.cookie("refreshToken", refreshToken, getCookieOptions());
-
-  res.status(200).json({
-    accessToken,
-    user: {
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      role
-    }
-  });
-}
-
-export async function refresh(req: Request, res: Response): Promise<void> {
-  const refreshToken = getRefreshTokenFromCookie(req);
-
-  if (!refreshToken) {
-    res.status(401).json({ message: "Unauthorized" });
-    return;
-  }
-
-  let decoded: { id: string; role: AuthRole };
-
+export async function register(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
   try {
-    decoded = verifyRefreshToken(refreshToken);
-  } catch {
-    res.status(401).json({ message: "Unauthorized" });
-    return;
-  }
+    const { name, email, password, role } = req.body as {
+      name: string;
+      email: string;
+      password: string;
+      role: AuthRole;
+    };
+    const passwordHash = await hashPassword(password);
 
-  const existingToken = await findMatchingActiveRefreshToken(
-    refreshToken,
-    decoded.id,
-    decoded.role
-  );
+    if (role === "TEACHER") {
+      const existingTeacher = await prisma.teacher.findUnique({
+        where: { email }
+      });
 
-  if (!existingToken) {
-    res.status(401).json({ message: "Unauthorized" });
-    return;
-  }
+      if (existingTeacher) {
+        throw new AppError("Email already in use", 409);
+      }
 
-  await prisma.refreshToken.update({
-    where: { id: existingToken.id },
-    data: { revokedAt: new Date() }
-  });
-
-  const payload = { id: decoded.id, role: decoded.role };
-  const newAccessToken = signAccessToken(payload);
-  const newRefreshToken = signRefreshToken(payload);
-
-  const user =
-    decoded.role === "TEACHER"
-      ? await prisma.teacher.findUnique({
-          where: { id: decoded.id },
-          select: { id: true, name: true, email: true }
-        })
-      : await prisma.student.findUnique({
-          where: { id: decoded.id },
-          select: { id: true, name: true, email: true }
-        });
-
-  await prisma.refreshToken.create({
-    data: {
-      tokenHash: await hashPassword(newRefreshToken),
-      userType: decoded.role,
-      teacherId: decoded.role === "TEACHER" ? decoded.id : null,
-      studentId: decoded.role === "STUDENT" ? decoded.id : null,
-      expiresAt: new Date(Date.now() + SEVEN_DAYS_MS)
-    }
-  });
-
-  res.cookie("refreshToken", newRefreshToken, getCookieOptions());
-  res.status(200).json({
-    accessToken: newAccessToken,
-    user: user
-      ? {
-          id: user.id,
-          name: user.name,
-          email: user.email,
-          role: decoded.role
+      await prisma.teacher.create({
+        data: {
+          name,
+          email,
+          passwordHash
         }
-      : null
-  });
+      });
+    } else {
+      const existingStudent = await prisma.student.findUnique({
+        where: { email }
+      });
+
+      if (existingStudent) {
+        throw new AppError("Email already in use", 409);
+      }
+
+      await prisma.student.create({
+        data: {
+          name,
+          email,
+          passwordHash
+        }
+      });
+    }
+
+    res.status(201).json({ message: "Account created" });
+  } catch (error) {
+    next(error);
+  }
 }
 
-export async function logout(req: Request, res: Response): Promise<void> {
-  const refreshToken = getRefreshTokenFromCookie(req);
+export async function login(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    const { email, password, role } = req.body as {
+      email: string;
+      password: string;
+      role: AuthRole;
+    };
 
-  if (refreshToken) {
-    try {
-      const decoded = verifyRefreshToken(refreshToken);
-      const existingToken = await findMatchingActiveRefreshToken(
-        refreshToken,
-        decoded.id,
-        decoded.role
-      );
+    const user =
+      role === "TEACHER"
+        ? await prisma.teacher.findUnique({ where: { email } })
+        : await prisma.student.findUnique({ where: { email } });
 
-      if (existingToken) {
-        await prisma.refreshToken.update({
-          where: { id: existingToken.id },
-          data: { revokedAt: new Date() }
-        });
-      }
-    } catch {
-      // Clear cookie regardless of token validity.
+    if (!user) {
+      throw new AppError("Invalid credentials", 401);
     }
+
+    const isPasswordValid = await comparePassword(password, user.passwordHash);
+
+    if (!isPasswordValid) {
+      throw new AppError("Invalid credentials", 401);
+    }
+
+    const payload = { id: user.id, role };
+    const accessToken = signAccessToken(payload);
+    const refreshToken = signRefreshToken(payload);
+
+    await prisma.refreshToken.create({
+      data: {
+        tokenHash: await hashPassword(refreshToken),
+        userType: role,
+        teacherId: role === "TEACHER" ? user.id : null,
+        studentId: role === "STUDENT" ? user.id : null,
+        expiresAt: new Date(Date.now() + SEVEN_DAYS_MS)
+      }
+    });
+
+    res.cookie("refreshToken", refreshToken, getCookieOptions());
+
+    res.status(200).json({
+      accessToken,
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role
+      }
+    });
+  } catch (error) {
+    next(error);
   }
+}
 
-  res.clearCookie("refreshToken", {
-    httpOnly: true,
-    sameSite: "strict",
-    secure: process.env.NODE_ENV === "production"
-  });
+export async function refresh(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    const refreshToken = getRefreshTokenFromCookie(req);
 
-  res.status(200).json({ message: "Logged out" });
+    if (!refreshToken) {
+      throw new AppError("Unauthorized", 401);
+    }
+
+    let decoded: { id: string; role: AuthRole };
+
+    try {
+      decoded = verifyRefreshToken(refreshToken);
+    } catch {
+      throw new AppError("Unauthorized", 401);
+    }
+
+    const existingToken = await findMatchingActiveRefreshToken(
+      refreshToken,
+      decoded.id,
+      decoded.role
+    );
+
+    if (!existingToken) {
+      throw new AppError("Unauthorized", 401);
+    }
+
+    await prisma.refreshToken.update({
+      where: { id: existingToken.id },
+      data: { revokedAt: new Date() }
+    });
+
+    const payload = { id: decoded.id, role: decoded.role };
+    const newAccessToken = signAccessToken(payload);
+    const newRefreshToken = signRefreshToken(payload);
+
+    const user =
+      decoded.role === "TEACHER"
+        ? await prisma.teacher.findUnique({
+            where: { id: decoded.id },
+            select: { id: true, name: true, email: true }
+          })
+        : await prisma.student.findUnique({
+            where: { id: decoded.id },
+            select: { id: true, name: true, email: true }
+          });
+
+    await prisma.refreshToken.create({
+      data: {
+        tokenHash: await hashPassword(newRefreshToken),
+        userType: decoded.role,
+        teacherId: decoded.role === "TEACHER" ? decoded.id : null,
+        studentId: decoded.role === "STUDENT" ? decoded.id : null,
+        expiresAt: new Date(Date.now() + SEVEN_DAYS_MS)
+      }
+    });
+
+    res.cookie("refreshToken", newRefreshToken, getCookieOptions());
+    res.status(200).json({
+      accessToken: newAccessToken,
+      user: user
+        ? {
+            id: user.id,
+            name: user.name,
+            email: user.email,
+            role: decoded.role
+          }
+        : null
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function logout(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    const refreshToken = getRefreshTokenFromCookie(req);
+
+    if (refreshToken) {
+      try {
+        const decoded = verifyRefreshToken(refreshToken);
+        const existingToken = await findMatchingActiveRefreshToken(
+          refreshToken,
+          decoded.id,
+          decoded.role
+        );
+
+        if (existingToken) {
+          await prisma.refreshToken.update({
+            where: { id: existingToken.id },
+            data: { revokedAt: new Date() }
+          });
+        }
+      } catch {
+        // Clear cookie regardless of token validity.
+      }
+    }
+
+    res.clearCookie("refreshToken", {
+      httpOnly: true,
+      sameSite: "strict",
+      secure: process.env.NODE_ENV === "production"
+    });
+
+    res.status(200).json({ message: "Logged out" });
+  } catch (error) {
+    next(error);
+  }
 }

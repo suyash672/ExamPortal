@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ModuleForm } from "@/components/teacher/ModuleForm";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { useToast } from "@/components/ui/ToastProvider";
 import { deleteModule, getModules, type ModuleRecord } from "@/lib/api/modules";
 import { getSubjects, type SubjectRecord } from "@/lib/api/subjects";
@@ -41,6 +42,7 @@ export default function SubjectModulesPage() {
   const [showForm, setShowForm] = useState(false);
   const [editingModule, setEditingModule] = useState<ModuleRecord | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<ModuleRecord | null>(null);
 
   const loadModules = useCallback(async () => {
     if (!subjectId) {
@@ -72,16 +74,16 @@ export default function SubjectModulesPage() {
 
   const subjectName = useMemo(() => subject?.name ?? "Subject", [subject?.name]);
 
-  const handleDelete = async (module: ModuleRecord) => {
-    const confirmed = window.confirm(`Delete module \"${module.name}\"?`);
-    if (!confirmed) {
+  const handleDelete = async () => {
+    if (!pendingDelete) {
       return;
     }
 
     try {
-      setDeletingId(module.id);
-      await deleteModule(module.id);
+      setDeletingId(pendingDelete.id);
+      await deleteModule(pendingDelete.id);
       showToast("Module deleted");
+      setPendingDelete(null);
       await loadModules();
     } catch {
       showToast("Failed to delete module", "error");
@@ -160,11 +162,21 @@ export default function SubjectModulesPage() {
         </div>
       ) : modules.length === 0 ? (
         <div className="rounded-3xl border border-dashed border-slate-300 bg-white px-6 py-12 text-center">
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-slate-500">
+            🧩
+          </div>
           <h2 className="text-lg font-semibold text-slate-900">No modules yet</h2>
           <p className="mt-2 text-sm text-slate-500">Add the first module to start building question banks.</p>
+          <button
+            type="button"
+            onClick={startCreate}
+            className="mt-5 inline-flex items-center justify-center rounded-xl bg-[var(--primary)] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[var(--primary-hover)]"
+          >
+            Add Module
+          </button>
         </div>
       ) : (
-        <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+        <div className="overflow-x-auto rounded-3xl border border-slate-200 bg-white shadow-sm">
           <table className="min-w-full divide-y divide-slate-200">
             <thead className="bg-slate-50">
               <tr>
@@ -196,7 +208,7 @@ export default function SubjectModulesPage() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => void handleDelete(module)}
+                        onClick={() => setPendingDelete(module)}
                         disabled={deletingId === module.id}
                         className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-rose-50 hover:text-rose-600 disabled:cursor-not-allowed disabled:opacity-60"
                       >
@@ -231,6 +243,15 @@ export default function SubjectModulesPage() {
           />
         </div>
       )}
+
+      <ConfirmDialog
+        open={Boolean(pendingDelete)}
+        title="Delete module"
+        message={`Delete module "${pendingDelete?.name ?? ""}"?`}
+        loading={Boolean(deletingId)}
+        onCancel={() => setPendingDelete(null)}
+        onConfirm={() => void handleDelete()}
+      />
     </div>
   );
 }

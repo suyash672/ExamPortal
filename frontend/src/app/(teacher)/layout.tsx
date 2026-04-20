@@ -3,7 +3,9 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { Suspense, useEffect, useState } from "react";
+import { PageLoader } from "@/components/ui/PageLoader";
+import { Spinner } from "@/components/ui/Spinner";
 import { useAuth } from "@/context/AuthContext";
 
 const navigationItems = [
@@ -16,6 +18,7 @@ export default function TeacherLayout({ children }: { children: ReactNode }) {
   const { user, loading, isTeacher, logout } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   useEffect(() => {
     if (!loading && !isTeacher) {
@@ -28,9 +31,14 @@ export default function TeacherLayout({ children }: { children: ReactNode }) {
     router.replace("/login");
   };
 
+  useEffect(() => {
+    setMobileNavOpen(false);
+  }, [pathname]);
+
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-50 text-slate-600">
+      <div className="flex min-h-screen items-center justify-center gap-3 bg-slate-50 text-slate-600">
+        <Spinner />
         Loading dashboard...
       </div>
     );
@@ -46,7 +54,20 @@ export default function TeacherLayout({ children }: { children: ReactNode }) {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 lg:flex">
-      <aside className="border-r border-slate-200 bg-white px-5 py-6 lg:w-72 lg:px-6">
+      {mobileNavOpen ? (
+        <button
+          type="button"
+          onClick={() => setMobileNavOpen(false)}
+          className="fixed inset-0 z-30 bg-slate-950/40 lg:hidden"
+          aria-label="Close navigation"
+        />
+      ) : null}
+
+      <aside
+        className={`fixed inset-y-0 left-0 z-40 w-72 border-r border-slate-200 bg-white px-5 py-6 transition-transform lg:static lg:translate-x-0 lg:px-6 ${
+          mobileNavOpen ? "translate-x-0" : "-translate-x-full"
+        }`}
+      >
         <div className="mb-8">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--primary)]">
             ExamShield
@@ -80,11 +101,22 @@ export default function TeacherLayout({ children }: { children: ReactNode }) {
       <div className="flex min-h-screen flex-1 flex-col">
         <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/90 px-4 py-4 backdrop-blur sm:px-6 lg:px-8">
           <div className="flex items-center justify-between gap-4">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-                Signed in as teacher
-              </p>
-              <p className="mt-1 text-sm font-medium text-slate-900">{user?.name ?? "Teacher"}</p>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setMobileNavOpen((current) => !current)}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-300 text-slate-700 transition hover:bg-slate-100 lg:hidden"
+                aria-label="Toggle navigation"
+              >
+                ☰
+              </button>
+
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                  Signed in as teacher
+                </p>
+                <p className="mt-1 text-sm font-medium text-slate-900">{user?.name ?? "Teacher"}</p>
+              </div>
             </div>
 
             <button
@@ -97,7 +129,9 @@ export default function TeacherLayout({ children }: { children: ReactNode }) {
           </div>
         </header>
 
-        <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8">{children}</main>
+        <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8">
+          <Suspense fallback={<PageLoader />}>{children}</Suspense>
+        </main>
       </div>
     </div>
   );

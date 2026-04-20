@@ -5,6 +5,10 @@ export const enrollSchema = z.object({
   enrollmentKey: z.string().min(1)
 });
 
+export const beginTestSchema = z.object({
+  enrollmentId: z.string().uuid()
+});
+
 export const saveAnswerSchema = z.object({
   attemptId: z.string().uuid(),
   attemptQuestionId: z.string().uuid(),

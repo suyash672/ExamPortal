@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { useToast } from "@/components/ui/ToastProvider";
+import { getApiErrorMessage } from "@/lib/apiError";
 import { getModules, type ModuleRecord } from "@/lib/api/modules";
 import { getQuestionBanks, type QuestionBankRecord } from "@/lib/api/questionbanks";
 import { getSubjects, type SubjectRecord } from "@/lib/api/subjects";
@@ -353,7 +354,7 @@ export default function CreateTestPage() {
       showToast("Test created successfully");
       router.push("/dashboard/tests?created=1");
     } catch (apiError: any) {
-      showToast(apiError?.response?.data?.message ?? "Failed to create test", "error");
+      showToast(getApiErrorMessage(apiError, "Failed to create test"), "error");
     } finally {
       setSubmitting(false);
     }

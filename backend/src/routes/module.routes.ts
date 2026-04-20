@@ -10,6 +10,8 @@ import {
   requireModuleOwnership,
   requireSubjectOwnership
 } from "../middleware/ownership";
+import { validate } from "../middleware/validate";
+import { createModuleSchema, updateModuleSchema } from "../validators/module.validators";
 
 const moduleRouter = Router();
 
@@ -24,9 +26,19 @@ moduleRouter.get(
 moduleRouter.post(
   "/api/subjects/:subjectId/modules",
   requireSubjectOwnership,
+  (req, _res, next) => {
+    req.body = { ...req.body, subjectId: req.params.subjectId };
+    next();
+  },
+  validate(createModuleSchema),
   createModule
 );
-moduleRouter.put("/api/modules/:id", requireModuleOwnership, updateModule);
+moduleRouter.put(
+  "/api/modules/:id",
+  requireModuleOwnership,
+  validate(updateModuleSchema),
+  updateModule
+);
 moduleRouter.delete("/api/modules/:id", requireModuleOwnership, deleteModule);
 
 export default moduleRouter;

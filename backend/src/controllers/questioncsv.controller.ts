@@ -1,6 +1,7 @@
 import { PrismaClient } from "@prisma/client";
-import type { Request, Response } from "express";
+import type { NextFunction, Request, Response } from "express";
 import { parse } from "csv-parse/sync";
+import { AppError } from "../lib/AppError";
 import type { QuestionInput } from "../lib/question.persistence";
 import { createQuestionSchema } from "../validators/question.validators";
 import { createQuestionRecord } from "../lib/question.persistence";
@@ -116,93 +117,98 @@ async function ensureOwnedQuestionBank(qbId: string, teacherId: string) {
   return qb?.module.subject.teacherId === teacherId;
 }
 
-export async function importCsv(req: Request, res: Response): Promise<void> {
-  if (!req.user) {
-    res.status(401).json({ message: "Unauthorized" });
-    return;
-  }
-
-  const qbId = getParamAsString(req.body.qbId);
-  if (!qbId) {
-    res.status(400).json({ message: "qbId is required" });
-    return;
-  }
-
-  const owned = await ensureOwnedQuestionBank(qbId, req.user.id);
-  if (!owned) {
-    res.status(403).json({ message: "Forbidden" });
-    return;
-  }
-
-  if (!req.file?.buffer) {
-    res.status(400).json({ message: "file is required" });
-    return;
-  }
-
-  let records: CsvRecord[];
-
+export async function importCsv(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
   try {
-    records = parse(req.file.buffer.toString("utf8"), {
-      columns: true,
-      skip_empty_lines: true,
-      trim: true,
-      bom: true,
-      relax_column_count: true
-    }) as CsvRecord[];
-  } catch {
-    res.status(400).json({ message: "Invalid CSV file" });
-    return;
-  }
+    if (!req.user) {
+      throw new AppError("Unauthorized", 401);
+    }
 
-  const rowErrors: CsvRowError[] = [];
-  const validQuestions = [] as Array<
-    | {
-        qbId: string;
-        type: "MCQ";
-        questionText: string;
-        options: Array<{ optionText: string; scorePercent: number }>;
+    const qbId = getParamAsString(req.body.qbId);
+    if (!qbId) {
+      throw new AppError("qbId is required", 400);
+    }
+
+    const owned = await ensureOwnedQuestionBank(qbId, req.user.id);
+    if (!owned) {
+      throw new AppError("Forbidden", 403);
+    }
+
+    if (!req.file?.buffer) {
+      throw new AppError("file is required", 400);
+    }
+
+    let records: CsvRecord[];
+
+    try {
+      records = parse(req.file.buffer.toString("utf8"), {
+        columns: true,
+        skip_empty_lines: true,
+        trim: true,
+        bom: true,
+        relax_column_count: true
+      }) as CsvRecord[];
+    } catch {
+      throw new AppError("Invalid CSV file", 400);
+    }
+
+    const rowErrors: CsvRowError[] = [];
+    const validQuestions = [] as Array<
+      | {
+          qbId: string;
+          type: "MCQ";
+          questionText: string;
+          options: Array<{ optionText: string; scorePercent: number }>;
+        }
+      | {
+          qbId: string;
+          type: "TEXT";
+          questionText: string;
+          acceptedAnswers: string[];
+        }
+    >;
+
+    records.forEach((row, index) => {
+      const rowNumber = index + 2;
+      const candidate = buildQuestionPayloadFromRow(row, qbId);
+
+      if ("errors" in candidate) {
+        rowErrors.push({ row: rowNumber, errors: candidate.errors ?? ["Invalid row"] });
+        return;
       }
-    | {
-        qbId: string;
-        type: "TEXT";
-        questionText: string;
-        acceptedAnswers: string[];
+
+      const parsed = createQuestionSchema.safeParse(candidate.payload);
+      if (!parsed.success) {
+        rowErrors.push({
+          row: rowNumber,
+          errors: parsed.error.issues.map((issue) => issue.message)
+        });
+        return;
       }
-  >;
 
-  records.forEach((row, index) => {
-    const rowNumber = index + 2;
-    const candidate = buildQuestionPayloadFromRow(row, qbId);
+      validQuestions.push(parsed.data as QuestionInput);
+    });
 
-    if ("errors" in candidate) {
-      rowErrors.push({ row: rowNumber, errors: candidate.errors ?? ["Invalid row"] });
-      return;
+    if (rowErrors.length > 0) {
+      throw new AppError(JSON.stringify({ errors: rowErrors }), 400);
     }
 
-    const parsed = createQuestionSchema.safeParse(candidate.payload);
-    if (!parsed.success) {
-      rowErrors.push({
-        row: rowNumber,
-        errors: parsed.error.issues.map((issue) => issue.message)
-      });
-      return;
-    }
+    await prisma.$transaction(
+      async (tx) => {
+        for (const question of validQuestions) {
+          await createQuestionRecord(tx, question, { includeRelations: false });
+        }
+      },
+      {
+        timeout: 60000
+      }
+    );
 
-    validQuestions.push(parsed.data as QuestionInput);
-  });
-
-  if (rowErrors.length > 0) {
-    res.status(400).json({ errors: rowErrors });
-    return;
+    res.status(200).json({ imported: validQuestions.length });
+  } catch (error) {
+    next(error);
   }
-
-  await prisma.$transaction(async (tx) => {
-    for (const question of validQuestions) {
-      await createQuestionRecord(tx, question, { includeRelations: false });
-    }
-  }, {
-    timeout: 60000
-  });
-
-  res.status(200).json({ imported: validQuestions.length });
 }

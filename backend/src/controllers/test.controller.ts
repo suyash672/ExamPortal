@@ -1,6 +1,6 @@
 import { PrismaClient } from "@prisma/client";
-import type { Request, Response } from "express";
-import { createTestSchema } from "../validators/test.validators";
+import type { NextFunction, Request, Response } from "express";
+import { AppError } from "../lib/AppError";
 
 const prisma = new PrismaClient();
 
@@ -8,21 +8,29 @@ function getParamAsString(value: unknown): string | null {
   return typeof value === "string" ? value : null;
 }
 
-export async function createTest(req: Request, res: Response): Promise<void> {
-  if (!req.user) {
-    res.status(401).json({ message: "Unauthorized" });
-    return;
-  }
+export async function createTest(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    if (!req.user) {
+      throw new AppError("Unauthorized", 401);
+    }
 
-  const parsed = createTestSchema.safeParse(req.body);
-
-  if (!parsed.success) {
-    res.status(400).json({ errors: parsed.error.flatten() });
-    return;
-  }
-
-  const { title, enrollmentKey, startTime, endTime, durationMinutes, qbRules } =
-    parsed.data;
+    const { title, enrollmentKey, startTime, endTime, durationMinutes, qbRules } =
+      req.body as {
+        title: string;
+        enrollmentKey: string;
+        startTime: Date;
+        endTime: Date;
+        durationMinutes: number;
+        qbRules: Array<{
+          qbId: string;
+          questionsToPick: number;
+          marksPerQuestion: number;
+        }>;
+      };
 
   const qbIds = Array.from(new Set(qbRules.map((rule) => rule.qbId)));
 
@@ -45,21 +53,19 @@ export async function createTest(req: Request, res: Response): Promise<void> {
     }
   });
 
-  if (qbs.length !== qbIds.length) {
-    res.status(400).json({ message: "One or more question banks do not exist" });
-    return;
-  }
+    if (qbs.length !== qbIds.length) {
+      throw new AppError("One or more question banks do not exist", 400);
+    }
 
   const qbById = new Map(qbs.map((qb) => [qb.id, qb]));
 
-  for (const qbId of qbIds) {
-    const qb = qbById.get(qbId);
+    for (const qbId of qbIds) {
+      const qb = qbById.get(qbId);
 
-    if (!qb || qb.module.subject.teacherId !== req.user.id) {
-      res.status(403).json({ message: "Forbidden" });
-      return;
+      if (!qb || qb.module.subject.teacherId !== req.user.id) {
+        throw new AppError("Forbidden", 403);
+      }
     }
-  }
 
   const groupedCounts = await prisma.question.groupBy({
     by: ["qbId"],
@@ -76,61 +82,68 @@ export async function createTest(req: Request, res: Response): Promise<void> {
     groupedCounts.map((entry) => [entry.qbId, entry._count._all])
   );
 
-  for (const rule of qbRules) {
-    const qb = qbById.get(rule.qbId);
-    const questionCount = questionCountByQbId.get(rule.qbId) ?? 0;
+    for (const rule of qbRules) {
+      const qb = qbById.get(rule.qbId);
+      const questionCount = questionCountByQbId.get(rule.qbId) ?? 0;
 
-    if (rule.questionsToPick > questionCount) {
-      res.status(400).json({
-        message: `QB '${qb?.name ?? rule.qbId}' only has ${questionCount} questions, cannot pick ${rule.questionsToPick}`
-      });
-      return;
+      if (rule.questionsToPick > questionCount) {
+        throw new AppError(
+          `QB '${qb?.name ?? rule.qbId}' only has ${questionCount} questions, cannot pick ${rule.questionsToPick}`,
+          400
+        );
+      }
     }
-  }
 
   const totalMarks = qbRules.reduce(
     (sum, rule) => sum + rule.questionsToPick * rule.marksPerQuestion,
     0
   );
 
-  const createdTest = await prisma.$transaction(async (tx) => {
-    const test = await tx.test.create({
-      data: {
-        teacherId: req.user!.id,
-        title,
-        enrollmentKey,
-        startTime,
-        endTime,
-        durationMinutes,
-        totalMarks
-      }
+    const createdTest = await prisma.$transaction(async (tx) => {
+      const test = await tx.test.create({
+        data: {
+          teacherId: req.user!.id,
+          title,
+          enrollmentKey,
+          startTime,
+          endTime,
+          durationMinutes,
+          totalMarks
+        }
+      });
+
+      await tx.testQbRule.createMany({
+        data: qbRules.map((rule) => ({
+          testId: test.id,
+          qbId: rule.qbId,
+          questionsToPick: rule.questionsToPick,
+          marksPerQuestion: rule.marksPerQuestion
+        }))
+      });
+
+      return tx.test.findUniqueOrThrow({
+        where: { id: test.id },
+        include: {
+          testQbRules: true
+        }
+      });
     });
 
-    await tx.testQbRule.createMany({
-      data: qbRules.map((rule) => ({
-        testId: test.id,
-        qbId: rule.qbId,
-        questionsToPick: rule.questionsToPick,
-        marksPerQuestion: rule.marksPerQuestion
-      }))
-    });
-
-    return tx.test.findUniqueOrThrow({
-      where: { id: test.id },
-      include: {
-        testQbRules: true
-      }
-    });
-  });
-
-  res.status(201).json(createdTest);
+    res.status(201).json(createdTest);
+  } catch (error) {
+    next(error);
+  }
 }
 
-export async function getTests(req: Request, res: Response): Promise<void> {
-  if (!req.user) {
-    res.status(401).json({ message: "Unauthorized" });
-    return;
-  }
+export async function getTests(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    if (!req.user) {
+      throw new AppError("Unauthorized", 401);
+    }
 
   const tests = await prisma.test.findMany({
     where: { teacherId: req.user.id },
@@ -144,27 +157,33 @@ export async function getTests(req: Request, res: Response): Promise<void> {
     }
   });
 
-  res.status(200).json(
-    tests.map((test) => ({
-      ...test,
-      enrollmentCount: test._count.enrollments,
-      _count: undefined
-    }))
-  );
+    res.status(200).json(
+      tests.map((test) => ({
+        ...test,
+        enrollmentCount: test._count.enrollments,
+        _count: undefined
+      }))
+    );
+  } catch (error) {
+    next(error);
+  }
 }
 
-export async function getTestById(req: Request, res: Response): Promise<void> {
-  if (!req.user) {
-    res.status(401).json({ message: "Unauthorized" });
-    return;
-  }
+export async function getTestById(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    if (!req.user) {
+      throw new AppError("Unauthorized", 401);
+    }
 
   const testId = getParamAsString(req.params.id);
 
-  if (!testId) {
-    res.status(400).json({ message: "Test id is required" });
-    return;
-  }
+    if (!testId) {
+      throw new AppError("Test id is required", 400);
+    }
 
   const test = await prisma.test.findFirst({
     where: {
@@ -202,30 +221,35 @@ export async function getTestById(req: Request, res: Response): Promise<void> {
     }
   });
 
-  if (!test) {
-    res.status(404).json({ message: "Test not found" });
-    return;
-  }
+    if (!test) {
+      throw new AppError("Test not found", 404);
+    }
 
-  res.status(200).json({
-    ...test,
-    enrollmentCount: test._count.enrollments,
-    _count: undefined
-  });
+    res.status(200).json({
+      ...test,
+      enrollmentCount: test._count.enrollments,
+      _count: undefined
+    });
+  } catch (error) {
+    next(error);
+  }
 }
 
-export async function deleteTest(req: Request, res: Response): Promise<void> {
-  if (!req.user) {
-    res.status(401).json({ message: "Unauthorized" });
-    return;
-  }
+export async function deleteTest(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    if (!req.user) {
+      throw new AppError("Unauthorized", 401);
+    }
 
   const testId = getParamAsString(req.params.id);
 
-  if (!testId) {
-    res.status(400).json({ message: "Test id is required" });
-    return;
-  }
+    if (!testId) {
+      throw new AppError("Test id is required", 400);
+    }
 
   const test = await prisma.test.findFirst({
     where: {
@@ -241,25 +265,26 @@ export async function deleteTest(req: Request, res: Response): Promise<void> {
     }
   });
 
-  if (!test) {
-    res.status(404).json({ message: "Test not found" });
-    return;
-  }
+    if (!test) {
+      throw new AppError("Test not found", 404);
+    }
 
-  if (test.isLocked || test._count.enrollments > 0) {
-    res.status(400).json({ message: "Cannot delete a test with enrollments" });
-    return;
-  }
+    if (test.isLocked || test._count.enrollments > 0) {
+      throw new AppError("Cannot delete a test with enrollments", 400);
+    }
 
-  await prisma.$transaction(async (tx) => {
-    await tx.testQbRule.deleteMany({
-      where: { testId }
+    await prisma.$transaction(async (tx) => {
+      await tx.testQbRule.deleteMany({
+        where: { testId }
+      });
+
+      await tx.test.delete({
+        where: { id: testId }
+      });
     });
 
-    await tx.test.delete({
-      where: { id: testId }
-    });
-  });
-
-  res.status(200).json({ message: "Test deleted" });
+    res.status(200).json({ message: "Test deleted" });
+  } catch (error) {
+    next(error);
+  }
 }

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/ui/ToastProvider";
+import { getApiErrorMessage } from "@/lib/apiError";
 import {
   beginTest,
   enrollInTest,
@@ -111,7 +112,7 @@ export default function StudentTestsPage() {
       setEnrollingTestId(null);
       await load();
     } catch (apiError: any) {
-      showToast(apiError?.response?.data?.message ?? "Enrollment failed", "error");
+      showToast(getApiErrorMessage(apiError, "Enrollment failed"), "error");
     } finally {
       setEnrollSubmitting(false);
     }
@@ -127,7 +128,7 @@ export default function StudentTestsPage() {
       const attempt = await beginTest({ enrollmentId });
       router.push(`/tests/${attempt.id}`);
     } catch (apiError: any) {
-      showToast(apiError?.response?.data?.message ?? "Unable to begin test", "error");
+      showToast(getApiErrorMessage(apiError, "Unable to begin test"), "error");
       await load();
     } finally {
       setBeginLoadingId(null);

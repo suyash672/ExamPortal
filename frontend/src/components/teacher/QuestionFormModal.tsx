@@ -86,12 +86,14 @@ function normalizeQuestion(
   }
 
   if (question.type === "MCQ") {
+    const mcqOptions = question.mcqOptions ?? [];
+
     return {
       qbId: question.qbId || qbId,
       type: "MCQ",
       questionText: question.questionText,
-      options: question.mcqOptions.length
-        ? question.mcqOptions.map((option) => ({
+      options: mcqOptions.length
+        ? mcqOptions.map((option) => ({
             optionText: option.optionText,
             scorePercent: option.scorePercent
           }))
@@ -102,12 +104,14 @@ function normalizeQuestion(
     };
   }
 
+  const acceptedAnswers = question.acceptedAnswers ?? [];
+
   return {
     qbId: question.qbId || qbId,
     type: "TEXT",
     questionText: question.questionText,
-    acceptedAnswers: question.acceptedAnswers.length
-      ? question.acceptedAnswers.map((answer) => answer.answerText)
+    acceptedAnswers: acceptedAnswers.length
+      ? acceptedAnswers.map((answer) => answer.answerText)
       : [""]
   };
 }
@@ -203,8 +207,8 @@ export function QuestionFormModal({ open, qbId, onOpenChange, onSaved, question 
   });
 
   const type = useWatch({ control, name: "type" });
-  const optionValues = useWatch({ control, name: "options" });
-  const acceptedAnswerValues = useWatch({ control, name: "acceptedAnswers" });
+  const optionValues = useWatch({ control, name: "options" }) ?? [];
+  const acceptedAnswerValues = useWatch({ control, name: "acceptedAnswers" }) ?? [];
   const questionErrors = errors as any;
 
   const optionArray = useFieldArray({
@@ -232,7 +236,7 @@ export function QuestionFormModal({ open, qbId, onOpenChange, onSaved, question 
 
   useEffect(() => {
     if (type !== "MCQ") {
-      clearErrors(["root", "options"]);
+      clearErrors();
       return;
     }
 
@@ -241,7 +245,7 @@ export function QuestionFormModal({ open, qbId, onOpenChange, onSaved, question 
       return;
     }
 
-    clearErrors(["root", "options"]);
+    clearErrors();
   }, [clearErrors, mcqStatus?.message, setError, type]);
 
   const onSubmit = async (values: QuestionFormValues) => {

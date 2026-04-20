@@ -6,7 +6,9 @@ import { Fragment } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { CsvImportTab } from "@/components/teacher/CsvImportTab";
 import { QuestionFormModal } from "@/components/teacher/QuestionFormModal";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { useToast } from "@/components/ui/ToastProvider";
+import { getApiErrorMessage } from "@/lib/apiError";
 import { getModules, type ModuleRecord } from "@/lib/api/modules";
 import { deleteQuestion, getQuestions, type QuestionRecord } from "@/lib/api/questions";
 import { getQuestionBanks, type QuestionBankRecord } from "@/lib/api/questionbanks";
@@ -51,6 +53,7 @@ export default function QuestionsPage() {
   const [editingQuestion, setEditingQuestion] = useState<QuestionRecord | null>(null);
   const [expandedQuestionId, setExpandedQuestionId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<QuestionRecord | null>(null);
 
   const loadData = useCallback(async () => {
     if (!subjectId || !moduleId || !qbId) {
@@ -98,19 +101,19 @@ export default function QuestionsPage() {
     [module?.name, moduleId, qb?.name, qbId, subject?.name, subjectId]
   );
 
-  const handleDelete = async (question: QuestionRecord) => {
-    const confirmed = window.confirm(`Delete question?`);
-    if (!confirmed) {
+  const handleDelete = async () => {
+    if (!pendingDelete) {
       return;
     }
 
     try {
-      setDeletingId(question.id);
-      await deleteQuestion(question.id);
+      setDeletingId(pendingDelete.id);
+      await deleteQuestion(pendingDelete.id);
       showToast("Question deleted");
+      setPendingDelete(null);
       await loadData();
     } catch (error: any) {
-      showToast(error?.response?.data?.message ?? "Failed to delete question", "error");
+      showToast(getApiErrorMessage(error, "Failed to delete question"), "error");
     } finally {
       setDeletingId(null);
     }
@@ -122,20 +125,22 @@ export default function QuestionsPage() {
     <div className="space-y-6">
       <div className="space-y-3">
         <p className="text-sm text-slate-500">
-          {breadcrumb.map((item, index) =>
-            item.href ? (
-              <span key={item.label}>
+          {breadcrumb.map((item, index) => {
+            const key = `${item.href ?? "label"}-${item.label}-${index}`;
+
+            return item.href ? (
+              <span key={key}>
                 <Link href={item.href} className="font-medium text-[var(--primary)] hover:underline">
                   {item.label}
                 </Link>
                 {index < breadcrumb.length - 1 ? <span className="px-1 text-slate-300">&gt;</span> : null}
               </span>
             ) : (
-              <span key={item.label} className="font-medium text-slate-900">
+              <span key={key} className="font-medium text-slate-900">
                 {item.label}
               </span>
-            )
-          )}
+            );
+          })}
         </p>
 
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
@@ -195,11 +200,24 @@ export default function QuestionsPage() {
               </div>
             ) : questionRows.length === 0 ? (
               <div className="rounded-3xl border border-dashed border-slate-300 bg-white px-6 py-12 text-center">
+                <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-slate-500">
+                  ❓
+                </div>
                 <h2 className="text-lg font-semibold text-slate-900">No questions yet</h2>
                 <p className="mt-2 text-sm text-slate-500">Add your first question or import a CSV template.</p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingQuestion(null);
+                    setQuestionModalOpen(true);
+                  }}
+                  className="mt-5 inline-flex items-center justify-center rounded-xl bg-[var(--primary)] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[var(--primary-hover)]"
+                >
+                  Add Question
+                </button>
               </div>
             ) : (
-              <div className="overflow-hidden rounded-3xl border border-slate-200">
+              <div className="overflow-x-auto rounded-3xl border border-slate-200">
                 <table className="min-w-full divide-y divide-slate-200">
                   <thead className="bg-slate-50">
                     <tr>
@@ -247,7 +265,7 @@ export default function QuestionsPage() {
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={() => void handleDelete(question)}
+                                  onClick={() => setPendingDelete(question)}
                                   disabled={deletingId === question.id}
                                   className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-rose-50 hover:text-rose-600 disabled:cursor-not-allowed disabled:opacity-60"
                                 >
@@ -297,6 +315,15 @@ export default function QuestionsPage() {
         question={editingQuestion}
         onOpenChange={setQuestionModalOpen}
         onSaved={loadData}
+      />
+
+      <ConfirmDialog
+        open={Boolean(pendingDelete)}
+        title="Delete question"
+        message="Delete this question?"
+        loading={Boolean(deletingId)}
+        onCancel={() => setPendingDelete(null)}
+        onConfirm={() => void handleDelete()}
       />
     </div>
   );

@@ -1,6 +1,6 @@
 import { PrismaClient } from "@prisma/client";
-import type { Request, Response } from "express";
-import { createQuestionSchema } from "../validators/question.validators";
+import type { NextFunction, Request, Response } from "express";
+import { AppError } from "../lib/AppError";
 import { createQuestionRecord, questionInclude, replaceQuestionRecord } from "../lib/question.persistence";
 
 const prisma = new PrismaClient();
@@ -51,139 +51,155 @@ async function ensureOwnedQuestion(questionId: string, teacherId: string) {
   return question?.questionBank.module.subject.teacherId === teacherId;
 }
 
-export async function getQuestions(req: Request, res: Response): Promise<void> {
-  const qbId = getParamAsString(req.params.qbId);
+export async function getQuestions(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    const qbId = getParamAsString(req.params.qbId);
 
-  if (!req.user) {
-    res.status(401).json({ message: "Unauthorized" });
-    return;
+    if (!req.user) {
+      throw new AppError("Unauthorized", 401);
+    }
+
+    if (!qbId) {
+      throw new AppError("qbId is required", 400);
+    }
+
+    const owned = await ensureOwnedQuestionBank(qbId, req.user.id);
+    if (!owned) {
+      throw new AppError("Forbidden", 403);
+    }
+
+    const questions = await prisma.question.findMany({
+      where: {
+        qbId,
+        deletedAt: null
+      },
+      include: questionInclude(),
+      orderBy: { createdAt: "desc" }
+    });
+
+    res.status(200).json(questions);
+  } catch (error) {
+    next(error);
   }
-
-  if (!qbId) {
-    res.status(400).json({ message: "qbId is required" });
-    return;
-  }
-
-  const owned = await ensureOwnedQuestionBank(qbId, req.user.id);
-  if (!owned) {
-    res.status(403).json({ message: "Forbidden" });
-    return;
-  }
-
-  const questions = await prisma.question.findMany({
-    where: {
-      qbId,
-      deletedAt: null
-    },
-    include: questionInclude(),
-    orderBy: { createdAt: "desc" }
-  });
-
-  res.status(200).json(questions);
 }
 
-export async function createQuestion(req: Request, res: Response): Promise<void> {
-  if (!req.user) {
-    res.status(401).json({ message: "Unauthorized" });
-    return;
+export async function createQuestion(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    if (!req.user) {
+      throw new AppError("Unauthorized", 401);
+    }
+
+    const payload = req.body as {
+      qbId: string;
+      type: "MCQ" | "TEXT";
+      questionText: string;
+      options?: Array<{ optionText: string; scorePercent: number }>;
+      acceptedAnswers?: string[];
+    };
+
+    const owned = await ensureOwnedQuestionBank(payload.qbId, req.user.id);
+    if (!owned) {
+      throw new AppError("Forbidden", 403);
+    }
+
+    const createdQuestion = await prisma.$transaction(async (tx) => {
+      return createQuestionRecord(tx, payload as any);
+    });
+
+    res.status(201).json(createdQuestion);
+  } catch (error) {
+    next(error);
   }
-
-  const payload = {
-    ...req.body,
-    qbId: req.params.qbId ?? req.body.qbId
-  };
-
-  const parsed = createQuestionSchema.safeParse(payload);
-
-  if (!parsed.success) {
-    res.status(400).json({ errors: parsed.error.flatten() });
-    return;
-  }
-
-  const owned = await ensureOwnedQuestionBank(parsed.data.qbId, req.user.id);
-  if (!owned) {
-    res.status(403).json({ message: "Forbidden" });
-    return;
-  }
-
-  const createdQuestion = await prisma.$transaction(async (tx) => {
-    return createQuestionRecord(tx, parsed.data);
-  });
-
-  res.status(201).json(createdQuestion);
 }
 
-export async function updateQuestion(req: Request, res: Response): Promise<void> {
-  if (!req.user) {
-    res.status(401).json({ message: "Unauthorized" });
-    return;
+export async function updateQuestion(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    if (!req.user) {
+      throw new AppError("Unauthorized", 401);
+    }
+
+    const questionId = getParamAsString(req.params.id);
+
+    if (!questionId) {
+      throw new AppError("Question id is required", 400);
+    }
+
+    const payload = req.body as {
+      qbId: string;
+      type: "MCQ" | "TEXT";
+      questionText: string;
+      options?: Array<{ optionText: string; scorePercent: number }>;
+      acceptedAnswers?: string[];
+    };
+
+    const ownedQuestion = await ensureOwnedQuestion(questionId, req.user.id);
+    if (!ownedQuestion) {
+      throw new AppError("Forbidden", 403);
+    }
+
+    const ownedQuestionBank = await ensureOwnedQuestionBank(payload.qbId, req.user.id);
+    if (!ownedQuestionBank) {
+      throw new AppError("Forbidden", 403);
+    }
+
+    const updatedQuestion = await prisma.$transaction(async (tx) => {
+      return replaceQuestionRecord(tx, questionId, payload as any);
+    });
+
+    res.status(200).json(updatedQuestion);
+  } catch (error) {
+    next(error);
   }
-
-  const questionId = getParamAsString(req.params.id);
-
-  if (!questionId) {
-    res.status(400).json({ message: "Question id is required" });
-    return;
-  }
-
-  const parsed = createQuestionSchema.safeParse(req.body);
-
-  if (!parsed.success) {
-    res.status(400).json({ errors: parsed.error.flatten() });
-    return;
-  }
-
-  const ownedQuestion = await ensureOwnedQuestion(questionId, req.user.id);
-  if (!ownedQuestion) {
-    res.status(403).json({ message: "Forbidden" });
-    return;
-  }
-
-  const ownedQuestionBank = await ensureOwnedQuestionBank(parsed.data.qbId, req.user.id);
-  if (!ownedQuestionBank) {
-    res.status(403).json({ message: "Forbidden" });
-    return;
-  }
-
-  const updatedQuestion = await prisma.$transaction(async (tx) => {
-    return replaceQuestionRecord(tx, questionId, parsed.data);
-  });
-
-  res.status(200).json(updatedQuestion);
 }
 
-export async function deleteQuestion(req: Request, res: Response): Promise<void> {
-  if (!req.user) {
-    res.status(401).json({ message: "Unauthorized" });
-    return;
+export async function deleteQuestion(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    if (!req.user) {
+      throw new AppError("Unauthorized", 401);
+    }
+
+    const questionId = getParamAsString(req.params.id);
+
+    if (!questionId) {
+      throw new AppError("Question id is required", 400);
+    }
+
+    const owned = await ensureOwnedQuestion(questionId, req.user.id);
+    if (!owned) {
+      throw new AppError("Forbidden", 403);
+    }
+
+    const attemptCount = await prisma.attemptQuestion.count({
+      where: { questionId }
+    });
+
+    if (attemptCount > 0) {
+      throw new AppError("Question has been used in an attempt and cannot be deleted", 400);
+    }
+
+    await prisma.question.update({
+      where: { id: questionId },
+      data: { deletedAt: new Date() }
+    });
+
+    res.status(200).json({ message: "Question deleted" });
+  } catch (error) {
+    next(error);
   }
-
-  const questionId = getParamAsString(req.params.id);
-
-  if (!questionId) {
-    res.status(400).json({ message: "Question id is required" });
-    return;
-  }
-
-  const owned = await ensureOwnedQuestion(questionId, req.user.id);
-  if (!owned) {
-    res.status(403).json({ message: "Forbidden" });
-    return;
-  }
-
-  const attemptCount = await prisma.attemptQuestion.count({
-    where: { questionId }
-  });
-
-  if (attemptCount > 0) {
-    res.status(400).json({ message: "Question has been used in an attempt and cannot be deleted" });
-    return;
-  }
-
-  await prisma.question.update({
-    where: { id: questionId },
-    data: { deletedAt: new Date() }
-  });
-
-  res.status(200).json({ message: "Question deleted" });
 }

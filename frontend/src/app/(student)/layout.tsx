@@ -1,8 +1,10 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { useEffect } from "react";
+import { Suspense, useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import { PageLoader } from "@/components/ui/PageLoader";
+import { Spinner } from "@/components/ui/Spinner";
 import { useAuth } from "@/context/AuthContext";
 
 export default function StudentLayout({ children }: { children: ReactNode }) {
@@ -23,7 +25,8 @@ export default function StudentLayout({ children }: { children: ReactNode }) {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-50 text-slate-600">
+      <div className="flex min-h-screen items-center justify-center gap-3 bg-slate-50 text-slate-600">
+        <Spinner />
         Loading student portal...
       </div>
     );
@@ -40,7 +43,7 @@ export default function StudentLayout({ children }: { children: ReactNode }) {
   const isAttemptPage = pathname.startsWith("/tests/");
 
   if (isAttemptPage) {
-    return <>{children}</>;
+    return <Suspense fallback={<PageLoader />}>{children}</Suspense>;
   }
 
   return (
@@ -67,7 +70,9 @@ export default function StudentLayout({ children }: { children: ReactNode }) {
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 lg:px-8">{children}</main>
+      <main className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 lg:px-8">
+        <Suspense fallback={<PageLoader />}>{children}</Suspense>
+      </main>
     </div>
   );
 }

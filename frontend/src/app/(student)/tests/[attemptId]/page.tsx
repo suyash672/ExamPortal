@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useToast } from "@/components/ui/ToastProvider";
+import { getApiErrorMessage } from "@/lib/apiError";
 import {
   getAttempt,
   saveAnswer,
@@ -102,7 +103,7 @@ export default function AttemptPage() {
       setSaveStates(nextSaveStates);
       setCurrentQuestionIndex(0);
     } catch (apiError: any) {
-      setError(apiError?.response?.data?.message ?? "Unable to load attempt.");
+      setError(getApiErrorMessage(apiError, "Unable to load attempt."));
     } finally {
       setLoading(false);
     }
@@ -153,7 +154,7 @@ export default function AttemptPage() {
         showToast(`Submitted. Score: ${response.score}/${response.totalMarks}`);
         router.replace("/tests");
       } catch (apiError: any) {
-        showToast(apiError?.response?.data?.message ?? "Unable to submit test", "error");
+        showToast(getApiErrorMessage(apiError, "Unable to submit test"), "error");
         if (apiError?.response?.status === 400) {
           router.replace("/tests");
         }
@@ -240,7 +241,7 @@ export default function AttemptPage() {
             setSaveStates((current) => ({ ...current, [attemptQuestionId]: "idle" }));
           }, 1500);
         } catch (apiError: any) {
-          const message = apiError?.response?.data?.message;
+          const message = getApiErrorMessage(apiError, "Failed to save answer");
 
           if (message === "Time expired, test auto-submitted") {
             showToast(message, "error");
@@ -249,7 +250,7 @@ export default function AttemptPage() {
           }
 
           setSaveStates((current) => ({ ...current, [attemptQuestionId]: "idle" }));
-          showToast(message ?? "Failed to save answer", "error");
+          showToast(message, "error");
         }
       }, 800);
     },
