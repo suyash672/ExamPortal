@@ -307,7 +307,7 @@ export default function QuestionBanksPage() {
               {questionBanks.map((bank) => (
                 <tr key={bank.id} className="transition hover:bg-slate-50/60">
                   <td className="px-5 py-4 text-sm font-medium text-slate-900">{bank.name}</td>
-                  <td className="px-5 py-4 text-sm text-slate-600">{bank._count.questions}</td>
+                  <td className="px-5 py-4 text-sm text-slate-600">{bank._count?.questions ?? 0}</td>
                   <td className="px-5 py-4">
                     <div className="flex flex-wrap items-center gap-2">
                       <button

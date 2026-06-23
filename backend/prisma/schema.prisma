@@ -9,12 +9,12 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "mongodb"
   url      = env("DATABASE_URL")
 }
 
 model Teacher {
-  id            String         @id @default(uuid())
+  id            String         @id @default(auto()) @map("_id") @db.ObjectId
   name          String
   email         String         @unique
   passwordHash  String
@@ -25,7 +25,7 @@ model Teacher {
 }
 
 model Student {
-  id            String         @id @default(uuid())
+  id            String         @id @default(auto()) @map("_id") @db.ObjectId
   name          String
   email         String         @unique
   passwordHash  String
@@ -35,11 +35,11 @@ model Student {
 }
 
 model RefreshToken {
-  id         String    @id @default(uuid())
+  id         String    @id @default(auto()) @map("_id") @db.ObjectId
   tokenHash  String    @unique
   userType   UserType
-  teacherId  String?
-  studentId  String?
+  teacherId  String?   @db.ObjectId
+  studentId  String?   @db.ObjectId
   teacher    Teacher?  @relation(fields: [teacherId], references: [id])
   student    Student?  @relation(fields: [studentId], references: [id])
   expiresAt  DateTime
@@ -53,8 +53,8 @@ enum UserType {
 }
 
 model Subject {
-  id          String    @id @default(uuid())
-  teacherId   String
+  id          String    @id @default(auto()) @map("_id") @db.ObjectId
+  teacherId   String    @db.ObjectId
   teacher     Teacher   @relation(fields: [teacherId], references: [id])
   name        String
   description String?
@@ -63,8 +63,8 @@ model Subject {
 }
 
 model Module {
-  id            String         @id @default(uuid())
-  subjectId     String
+  id            String         @id @default(auto()) @map("_id") @db.ObjectId
+  subjectId     String         @db.ObjectId
   subject       Subject        @relation(fields: [subjectId], references: [id])
   name          String
   createdAt     DateTime       @default(now())
@@ -72,8 +72,8 @@ model Module {
 }
 
 model QuestionBank {
-  id          String       @id @default(uuid())
-  moduleId    String
+  id          String       @id @default(auto()) @map("_id") @db.ObjectId
+  moduleId    String       @db.ObjectId
   module      Module       @relation(fields: [moduleId], references: [id])
   name        String
   createdAt   DateTime     @default(now())
@@ -87,8 +87,8 @@ enum QuestionType {
 }
 
 model Question {
-  id               String               @id @default(uuid())
-  qbId             String
+  id               String               @id @default(auto()) @map("_id") @db.ObjectId
+  qbId             String               @db.ObjectId
   questionBank     QuestionBank         @relation(fields: [qbId], references: [id])
   type             QuestionType
   questionText     String
@@ -100,8 +100,8 @@ model Question {
 }
 
 model McqOption {
-  id                     String                @id @default(uuid())
-  questionId             String
+  id                     String                @id @default(auto()) @map("_id") @db.ObjectId
+  questionId             String                @db.ObjectId
   question               Question              @relation(fields: [questionId], references: [id])
   optionText             String
   scorePercent           Int
@@ -109,15 +109,15 @@ model McqOption {
 }
 
 model TextAcceptedAnswer {
-  id         String   @id @default(uuid())
-  questionId String
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  questionId String   @db.ObjectId
   question   Question @relation(fields: [questionId], references: [id])
   answerText String
 }
 
 model Test {
-  id              String       @id @default(uuid())
-  teacherId       String
+  id              String       @id @default(auto()) @map("_id") @db.ObjectId
+  teacherId       String       @db.ObjectId
   teacher         Teacher      @relation(fields: [teacherId], references: [id])
   title           String
   enrollmentKey   String
@@ -132,20 +132,20 @@ model Test {
 }
 
 model TestQbRule {
-  id               String       @id @default(uuid())
-  testId           String
+  id               String       @id @default(auto()) @map("_id") @db.ObjectId
+  testId           String       @db.ObjectId
   test             Test         @relation(fields: [testId], references: [id])
-  qbId             String
+  qbId             String       @db.ObjectId
   questionBank     QuestionBank @relation(fields: [qbId], references: [id])
   questionsToPick  Int
   marksPerQuestion Int
 }
 
 model Enrollment {
-  id         String    @id @default(uuid())
-  studentId  String
+  id         String    @id @default(auto()) @map("_id") @db.ObjectId
+  studentId  String    @db.ObjectId
   student    Student   @relation(fields: [studentId], references: [id])
-  testId     String
+  testId     String    @db.ObjectId
   test       Test      @relation(fields: [testId], references: [id])
   enrolledAt DateTime  @default(now())
   attempt    Attempt?
@@ -154,8 +154,8 @@ model Enrollment {
 }
 
 model Attempt {
-  id           String            @id @default(uuid())
-  enrollmentId String            @unique
+  id           String            @id @default(auto()) @map("_id") @db.ObjectId
+  enrollmentId String            @unique @db.ObjectId
   enrollment   Enrollment        @relation(fields: [enrollmentId], references: [id])
   startedAt    DateTime          @default(now())
   submittedAt  DateTime?
@@ -165,17 +165,17 @@ model Attempt {
 }
 
 model AttemptQuestion {
-  id         String         @id @default(uuid())
-  attemptId  String
+  id         String         @id @default(auto()) @map("_id") @db.ObjectId
+  attemptId  String         @db.ObjectId
   attempt    Attempt        @relation(fields: [attemptId], references: [id])
-  questionId String
+  questionId String         @db.ObjectId
   question   Question       @relation(fields: [questionId], references: [id])
   answer     AttemptAnswer?
 }
 
 model AttemptAnswer {
-  id                String                @id @default(uuid())
-  attemptQuestionId String                @unique
+  id                String                @id @default(auto()) @map("_id") @db.ObjectId
+  attemptQuestionId String                @unique @db.ObjectId
   attemptQuestion   AttemptQuestion       @relation(fields: [attemptQuestionId], references: [id])
   textAnswer        String?
   marksAwarded      Int?
@@ -183,9 +183,9 @@ model AttemptAnswer {
 }
 
 model AttemptAnswerOption {
-  id              String        @id @default(uuid())
-  attemptAnswerId String
+  id              String        @id @default(auto()) @map("_id") @db.ObjectId
+  attemptAnswerId String        @db.ObjectId
   attemptAnswer   AttemptAnswer @relation(fields: [attemptAnswerId], references: [id])
-  mcqOptionId     String
+  mcqOptionId     String        @db.ObjectId
   mcqOption       McqOption     @relation(fields: [mcqOptionId], references: [id])
 }

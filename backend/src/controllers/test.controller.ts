@@ -67,20 +67,16 @@ export async function createTest(
       }
     }
 
-  const groupedCounts = await prisma.question.groupBy({
-    by: ["qbId"],
-    where: {
-      qbId: { in: qbIds },
-      deletedAt: null
-    },
-    _count: {
-      _all: true
-    }
-  });
-
-  const questionCountByQbId = new Map(
-    groupedCounts.map((entry) => [entry.qbId, entry._count._all])
-  );
+  const questionCountByQbId = new Map<string, number>();
+  for (const qbId of qbIds) {
+    const count = await prisma.question.count({
+      where: {
+        qbId,
+        deletedAt: null
+      }
+    });
+    questionCountByQbId.set(qbId, count);
+  }
 
     for (const rule of qbRules) {
       const qb = qbById.get(rule.qbId);

@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 const createMcqSchemaBase = z.object({
-  qbId: z.string().uuid(),
+  qbId: z.string().regex(/^[a-fA-F0-9]{24}$/),
   type: z.literal("MCQ"),
   questionText: z.string().trim().min(5).max(1000),
   options: z.array(z.object({
@@ -11,7 +11,7 @@ const createMcqSchemaBase = z.object({
 });
 
 const createTextSchemaBase = z.object({
-  qbId: z.string().uuid(),
+  qbId: z.string().regex(/^[a-fA-F0-9]{24}$/),
   type: z.literal("TEXT"),
   questionText: z.string().trim().min(5).max(1000),
   acceptedAnswers: z.array(

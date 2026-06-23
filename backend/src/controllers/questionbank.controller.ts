@@ -25,7 +25,9 @@ export async function getQbs(
       include: {
         _count: {
           select: {
-            questions: true
+            questions: {
+              where: { deletedAt: null }
+            }
           }
         }
       },

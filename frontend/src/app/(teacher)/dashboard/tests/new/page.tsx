@@ -116,6 +116,13 @@ export default function CreateTestPage() {
   const [startTimeInput, setStartTimeInput] = useState("");
   const [endTimeInput, setEndTimeInput] = useState("");
   const [durationMinutesInput, setDurationMinutesInput] = useState("");
+  const [minDateTime, setMinDateTime] = useState("");
+
+  useEffect(() => {
+    const now = new Date();
+    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+    setMinDateTime(now.toISOString().slice(0, 16));
+  }, []);
 
   const [treeLoading, setTreeLoading] = useState(true);
   const [treeError, setTreeError] = useState<string | null>(null);
@@ -451,6 +458,7 @@ export default function CreateTestPage() {
               <input
                 id="startTime"
                 type="datetime-local"
+                min={minDateTime}
                 value={startTimeInput}
                 onChange={(event) => setStartTimeInput(event.target.value)}
                 className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 transition focus:border-[var(--ring)] focus:ring-2 focus:ring-[var(--ring)]/30"
@@ -465,6 +473,7 @@ export default function CreateTestPage() {
               <input
                 id="endTime"
                 type="datetime-local"
+                min={minDateTime}
                 value={endTimeInput}
                 onChange={(event) => setEndTimeInput(event.target.value)}
                 className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 transition focus:border-[var(--ring)] focus:ring-2 focus:ring-[var(--ring)]/30"

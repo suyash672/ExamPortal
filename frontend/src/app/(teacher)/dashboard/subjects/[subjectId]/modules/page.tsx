@@ -195,7 +195,7 @@ export default function SubjectModulesPage() {
               {modules.map((module) => (
                 <tr key={module.id} className="transition hover:bg-slate-50/60">
                   <td className="px-5 py-4 text-sm font-medium text-slate-900">{module.name}</td>
-                  <td className="px-5 py-4 text-sm text-slate-600">{module._count.questionBanks}</td>
+                  <td className="px-5 py-4 text-sm text-slate-600">{module._count?.questionBanks ?? 0}</td>
                   <td className="px-5 py-4">
                     <div className="flex flex-wrap items-center gap-2">
                       <button

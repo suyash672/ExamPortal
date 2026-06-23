@@ -5,7 +5,7 @@ export type QuestionBankRecord = {
   moduleId: string;
   name: string;
   createdAt: string;
-  _count: {
+  _count?: {
     questions: number;
   };
 };

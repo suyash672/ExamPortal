@@ -35,3 +35,23 @@ export const createTestSchema = z
       });
     }
   });
+
+try {
+  createTestSchema.parse({
+    title: "Test",
+    enrollmentKey: "test1234",
+    startTime: "2026-06-23T11:16:00.000Z", // say 16:46 IST
+    endTime: "2026-06-23T12:16:00.000Z",
+    durationMinutes: 60,
+    qbRules: [
+      {
+        qbId: "60b8d295f1c4e7240c1e0b5a",
+        questionsToPick: 1,
+        marksPerQuestion: 1
+      }
+    ]
+  });
+  console.log("Valid");
+} catch (e: any) {
+  console.log(e.errors);
+}

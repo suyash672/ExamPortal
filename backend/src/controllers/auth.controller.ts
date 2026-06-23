@@ -216,10 +216,11 @@ export async function refresh(
       throw new AppError("Unauthorized", 401);
     }
 
-    await prisma.refreshToken.update({
-      where: { id: existingToken.id },
-      data: { revokedAt: new Date() }
-    });
+    // Token rotation disabled to avoid race conditions with concurrent requests
+    // await prisma.refreshToken.update({
+    //   where: { id: existingToken.id },
+    //   data: { revokedAt: new Date() }
+    // });
 
     const payload = { id: decoded.id, role: decoded.role };
     const newAccessToken = signAccessToken(payload);

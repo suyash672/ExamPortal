@@ -296,6 +296,24 @@ export default function QuestionsPage() {
                               </td>
                             </tr>
                           ) : null}
+                          {expanded && question.type === "TEXT" ? (
+                            <tr>
+                              <td colSpan={3} className="bg-slate-50 px-4 py-4">
+                                <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                                    Accepted Answers
+                                  </p>
+                                  <div className="mt-3 flex flex-wrap gap-2">
+                                    {question.acceptedAnswers?.map((answer) => (
+                                      <div key={answer.id ?? answer.answerText} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+                                        <span className="font-medium text-slate-900">{answer.answerText}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>
+                          ) : null}
                         </Fragment>
                       );
                     })}
