@@ -15,16 +15,16 @@ const navigationItems = [
 ];
 
 export default function TeacherLayout({ children }: { children: ReactNode }) {
-  const { user, loading, isTeacher, logout } = useAuth();
+  const { user, loading, isTeacher, logout, sessionRestoreError } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   useEffect(() => {
-    if (!loading && !isTeacher) {
+    if (!loading && !isTeacher && !sessionRestoreError) {
       router.replace("/login");
     }
-  }, [isTeacher, loading, router]);
+  }, [isTeacher, loading, sessionRestoreError, router]);
 
   const handleLogout = async () => {
     await logout();
@@ -40,6 +40,21 @@ export default function TeacherLayout({ children }: { children: ReactNode }) {
       <div className="flex min-h-screen items-center justify-center gap-3 bg-slate-50 text-slate-600">
         <Spinner />
         Loading dashboard...
+      </div>
+    );
+  }
+
+  if (sessionRestoreError) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-slate-50 text-slate-600">
+        <p className="text-sm">Could not reach the server. Check your connection and try again.</p>
+        <button
+          type="button"
+          onClick={() => window.location.reload()}
+          className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium transition hover:bg-slate-100"
+        >
+          Retry
+        </button>
       </div>
     );
   }

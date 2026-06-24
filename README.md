@@ -2,7 +2,7 @@
 
 ExamShield is a full-stack exam platform with separate teacher and student flows.
 
-- Backend: Express + TypeScript + Prisma + PostgreSQL
+- Backend: Express + TypeScript + Prisma + MongoDB
 - Frontend: Next.js (App Router) + TypeScript + Tailwind CSS
 - Auth: JWT access token + refresh token rotation with HTTP-only cookie
 
@@ -21,7 +21,7 @@ examshield/
 
 - Node.js 18+
 - npm 9+
-- PostgreSQL
+- MongoDB (replica set required for Prisma transactions)
 
 ## Environment configuration
 
@@ -65,7 +65,7 @@ Prepare database (from `backend/`):
 
 ```bash
 npx prisma generate
-npx prisma migrate dev
+npx prisma db push
 ```
 
 Run backend:

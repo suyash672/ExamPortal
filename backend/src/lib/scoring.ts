@@ -96,24 +96,12 @@ export async function scoreAttempt(attemptId: string): Promise<number> {
       continue;
     }
 
-    const fullMarkOptionsCount = question.mcqOptions.filter(
-      (option) => option.scorePercent === 100
-    ).length;
-    const isSingleCorrect = fullMarkOptionsCount === 1;
-
     const totalPercent = selectedIds.reduce((sum, id) => {
       const option = optionsById.get(id);
       return sum + (option?.scorePercent ?? 0);
     }, 0);
 
-    const computedMarks = (totalPercent / 100) * marksPerQuestion;
-
-    // Branch retained intentionally for explicit single/multi-correct behavior clarity.
-    if (isSingleCorrect) {
-      total += computedMarks;
-    } else {
-      total += computedMarks;
-    }
+    total += (totalPercent / 100) * marksPerQuestion;
   }
 
   return Math.floor(total);

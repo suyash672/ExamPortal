@@ -42,7 +42,7 @@ questionRouter.post(
   upload.single("file"),
   validate(
     z.object({
-      qbId: z.string().uuid()
+      qbId: z.string().regex(/^[a-fA-F0-9]{24}$/)
     })
   ),
   importCsv

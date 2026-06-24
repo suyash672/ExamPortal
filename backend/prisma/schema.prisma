@@ -37,6 +37,10 @@ model Student {
 model RefreshToken {
   id         String    @id @default(auto()) @map("_id") @db.ObjectId
   tokenHash  String    @unique
+  sessionId  String?   @unique
+  userAgent  String?
+  ipAddress  String?
+  lastUsedAt DateTime?
   userType   UserType
   teacherId  String?   @db.ObjectId
   studentId  String?   @db.ObjectId

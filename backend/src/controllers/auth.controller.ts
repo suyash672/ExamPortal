@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto";
 import { PrismaClient, UserType } from "@prisma/client";
 import type { NextFunction, Request, Response } from "express";
 import { AppError } from "../lib/AppError";
@@ -12,7 +13,7 @@ import {
 const prisma = new PrismaClient();
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 
-function getRefreshTokenFromCookie(req: Request): string | null {
+export function getRefreshTokenFromCookie(req: Request): string | null {
   const cookieHeader = req.headers.cookie;
 
   if (!cookieHeader) {
@@ -49,30 +50,43 @@ function getRoleFilter(role: AuthRole, id: string) {
     : { userType: UserType.STUDENT, studentId: id };
 }
 
-async function findMatchingActiveRefreshToken(
-  rawToken: string,
-  userId: string,
-  role: AuthRole
-) {
-  const whereBase = {
-    revokedAt: null as null,
-    expiresAt: { gt: new Date() },
-    ...getRoleFilter(role, userId)
-  };
-
-  const candidates = await prisma.refreshToken.findMany({
-    where: whereBase,
-    orderBy: { createdAt: "desc" }
-  });
-
-  for (const candidate of candidates) {
-    const isMatch = await comparePassword(rawToken, candidate.tokenHash);
-    if (isMatch) {
-      return candidate;
-    }
+function getClientIp(req: Request): string | null {
+  const forwarded = req.headers["x-forwarded-for"];
+  if (typeof forwarded === "string") {
+    return forwarded.split(",")[0].trim();
   }
+  return req.socket.remoteAddress ?? null;
+}
 
-  return null;
+const MAX_ACTIVE_REFRESH_TOKENS = 10;
+
+async function pruneStaleRefreshTokens(role: AuthRole, userId: string) {
+  try {
+    const roleFilter = getRoleFilter(role, userId);
+
+    await prisma.refreshToken.deleteMany({
+      where: { ...roleFilter, expiresAt: { lte: new Date() } }
+    });
+
+    await prisma.refreshToken.deleteMany({
+      where: { ...roleFilter, revokedAt: { lte: new Date() } }
+    });
+
+    const surplus = await prisma.refreshToken.findMany({
+      where: roleFilter,
+      orderBy: { createdAt: "desc" },
+      select: { id: true },
+      skip: MAX_ACTIVE_REFRESH_TOKENS
+    });
+
+    if (surplus.length > 0) {
+      await prisma.refreshToken.deleteMany({
+        where: { id: { in: surplus.map((token) => token.id) } }
+      });
+    }
+  } catch {
+    // Swallow pruning errors so they never break login or refresh.
+  }
 }
 
 export async function register(
@@ -156,13 +170,20 @@ export async function login(
       throw new AppError("Invalid credentials", 401);
     }
 
-    const payload = { id: user.id, role };
-    const accessToken = signAccessToken(payload);
+    const sessionId = randomUUID();
+    const payload = { id: user.id, role, sessionId };
+    const accessToken = signAccessToken({ id: user.id, role });
     const refreshToken = signRefreshToken(payload);
+
+    await pruneStaleRefreshTokens(role, user.id);
 
     await prisma.refreshToken.create({
       data: {
         tokenHash: await hashPassword(refreshToken),
+        sessionId,
+        userAgent: req.headers["user-agent"] ?? null,
+        ipAddress: getClientIp(req),
+        lastUsedAt: new Date(),
         userType: role,
         teacherId: role === "TEACHER" ? user.id : null,
         studentId: role === "STUDENT" ? user.id : null,
@@ -192,71 +213,74 @@ export async function refresh(
   next: NextFunction
 ): Promise<void> {
   try {
-    const refreshToken = getRefreshTokenFromCookie(req);
+    const rawToken = getRefreshTokenFromCookie(req);
 
-    if (!refreshToken) {
+    if (!rawToken) {
       throw new AppError("Unauthorized", 401);
     }
 
-    let decoded: { id: string; role: AuthRole };
+    let decoded: { id: string; role: AuthRole; sessionId: string };
 
     try {
-      decoded = verifyRefreshToken(refreshToken);
+      decoded = verifyRefreshToken(rawToken);
     } catch {
       throw new AppError("Unauthorized", 401);
     }
 
-    const existingToken = await findMatchingActiveRefreshToken(
-      refreshToken,
-      decoded.id,
-      decoded.role
-    );
+    // Look up session by sessionId (O(1) instead of bcrypt-comparing all tokens).
+    // NOTE: revokedAt is intentionally NOT in the where clause. Prisma's MongoDB
+    // connector has a known bug where a `{ revokedAt: null }` equality filter,
+    // when combined with other conditions, fails to match documents whose field
+    // genuinely is null. We therefore fetch by sessionId and check revocation +
+    // expiry in application code below.
+    const existingToken = await prisma.refreshToken.findFirst({
+      where: {
+        sessionId: decoded.sessionId,
+        ...getRoleFilter(decoded.role, decoded.id)
+      }
+    });
 
-    if (!existingToken) {
+    const isActive =
+      existingToken !== null &&
+      existingToken.revokedAt === null &&
+      existingToken.expiresAt.getTime() > Date.now();
+
+    if (!existingToken || !isActive) {
       throw new AppError("Unauthorized", 401);
     }
-
-    // Token rotation disabled to avoid race conditions with concurrent requests
-    // await prisma.refreshToken.update({
-    //   where: { id: existingToken.id },
-    //   data: { revokedAt: new Date() }
-    // });
-
-    const payload = { id: decoded.id, role: decoded.role };
-    const newAccessToken = signAccessToken(payload);
-    const newRefreshToken = signRefreshToken(payload);
 
     const user =
       decoded.role === "TEACHER"
         ? await prisma.teacher.findUnique({
-            where: { id: decoded.id },
-            select: { id: true, name: true, email: true }
-          })
+          where: { id: decoded.id },
+          select: { id: true, name: true, email: true }
+        })
         : await prisma.student.findUnique({
-            where: { id: decoded.id },
-            select: { id: true, name: true, email: true }
-          });
+          where: { id: decoded.id },
+          select: { id: true, name: true, email: true }
+        });
 
-    await prisma.refreshToken.create({
-      data: {
-        tokenHash: await hashPassword(newRefreshToken),
-        userType: decoded.role,
-        teacherId: decoded.role === "TEACHER" ? decoded.id : null,
-        studentId: decoded.role === "STUDENT" ? decoded.id : null,
-        expiresAt: new Date(Date.now() + SEVEN_DAYS_MS)
-      }
+    // Update session activity and extend expiry (sliding sessions)
+    const newExpiresAt = new Date(Date.now() + SEVEN_DAYS_MS);
+    await prisma.refreshToken.update({
+      where: { id: existingToken.id },
+      data: { lastUsedAt: new Date(), expiresAt: newExpiresAt }
     });
 
-    res.cookie("refreshToken", newRefreshToken, getCookieOptions());
+    // Re-issue the same cookie to extend the browser's cookie TTL
+    res.cookie("refreshToken", rawToken, getCookieOptions());
+
+    const newAccessToken = signAccessToken({ id: decoded.id, role: decoded.role });
+
     res.status(200).json({
       accessToken: newAccessToken,
       user: user
         ? {
-            id: user.id,
-            name: user.name,
-            email: user.email,
-            role: decoded.role
-          }
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          role: decoded.role
+        }
         : null
     });
   } catch (error) {
@@ -270,23 +294,18 @@ export async function logout(
   next: NextFunction
 ): Promise<void> {
   try {
-    const refreshToken = getRefreshTokenFromCookie(req);
+    const rawToken = getRefreshTokenFromCookie(req);
 
-    if (refreshToken) {
+    if (rawToken) {
       try {
-        const decoded = verifyRefreshToken(refreshToken);
-        const existingToken = await findMatchingActiveRefreshToken(
-          refreshToken,
-          decoded.id,
-          decoded.role
-        );
-
-        if (existingToken) {
-          await prisma.refreshToken.update({
-            where: { id: existingToken.id },
-            data: { revokedAt: new Date() }
-          });
-        }
+        const decoded = verifyRefreshToken(rawToken);
+        await prisma.refreshToken.updateMany({
+          where: {
+            sessionId: decoded.sessionId,
+            ...getRoleFilter(decoded.role, decoded.id)
+          },
+          data: { revokedAt: new Date() }
+        });
       } catch {
         // Clear cookie regardless of token validity.
       }

@@ -84,6 +84,16 @@ export default function QuestionsPage() {
     }
   }, [moduleId, qbId, subjectId]);
 
+  const refreshQuestions = useCallback(async () => {
+    if (!qbId) return;
+    try {
+      const questionsData = await getQuestions(qbId);
+      setQuestions(questionsData);
+    } catch {
+      showToast("Could not refresh questions list. Please reload the page.", "error");
+    }
+  }, [qbId, showToast]);
+
   useEffect(() => {
     void loadData();
   }, [loadData]);
@@ -111,7 +121,7 @@ export default function QuestionsPage() {
       await deleteQuestion(pendingDelete.id);
       showToast("Question deleted");
       setPendingDelete(null);
-      await loadData();
+      await refreshQuestions();
     } catch (error: any) {
       showToast(getApiErrorMessage(error, "Failed to delete question"), "error");
     } finally {
@@ -332,7 +342,7 @@ export default function QuestionsPage() {
         qbId={qbId}
         question={editingQuestion}
         onOpenChange={setQuestionModalOpen}
-        onSaved={loadData}
+        onSaved={refreshQuestions}
       />
 
       <ConfirmDialog
