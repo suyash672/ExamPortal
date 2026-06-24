@@ -72,7 +72,9 @@ export async function createTest(
     const count = await prisma.question.count({
       where: {
         qbId,
-        deletedAt: null
+        // MongoDB stores null as an absent field; isSet:false matches
+        // not-deleted questions (deletedAt: null would match nothing).
+        deletedAt: { isSet: false }
       }
     });
     questionCountByQbId.set(qbId, count);

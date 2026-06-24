@@ -75,7 +75,10 @@ export async function getQuestions(
     const questions = await prisma.question.findMany({
       where: {
         qbId,
-        deletedAt: null
+        // Prisma's MongoDB connector stores a null value as an absent field, so
+        // a `deletedAt: null` equality filter matches nothing. `isSet: false`
+        // correctly matches not-yet-deleted (absent deletedAt) questions.
+        deletedAt: { isSet: false }
       },
       include: questionInclude(),
       orderBy: { createdAt: "desc" }

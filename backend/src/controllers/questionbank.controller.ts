@@ -26,7 +26,9 @@ export async function getQbs(
         _count: {
           select: {
             questions: {
-              where: { deletedAt: null }
+              // MongoDB stores null as an absent field; isSet:false matches
+              // not-deleted questions (deletedAt: null fails to match).
+              where: { deletedAt: { isSet: false } }
             }
           }
         }
@@ -107,7 +109,7 @@ export async function deleteQb(
     const activeQuestionCount = await prisma.question.count({
       where: {
         qbId,
-        deletedAt: null
+        deletedAt: { isSet: false }
       }
     });
 

@@ -268,10 +268,9 @@ export async function enrollInTest(
 
     const now = nowDate();
 
-    if (now >= test.startTime) {
-      throw new AppError("Enrollment is closed, test has already started", 400);
-    }
-
+    // Enrollment stays open for the whole active window. A student may still
+    // join after the test has started (they simply get less time); enrollment
+    // only closes once the test has ended.
     if (now >= test.endTime) {
       throw new AppError("Enrollment is closed, test has already ended", 400);
     }
@@ -360,7 +359,9 @@ export async function beginTest(
       const questions = await prisma.question.findMany({
         where: {
           qbId: rule.qbId,
-          deletedAt: null
+          // MongoDB stores null as an absent field; isSet:false matches
+          // not-deleted questions (deletedAt: null would match nothing).
+          deletedAt: { isSet: false }
         },
         select: {
           id: true
