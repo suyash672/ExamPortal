@@ -206,3 +206,145 @@ export async function deleteQuestion(
     next(error);
   }
 }
+
+export async function deduplicateQuestions(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    if (!req.user) {
+      throw new AppError("Unauthorized", 401);
+    }
+    
+    const qbId = getParamAsString(req.body.qbId);
+    if (!qbId) {
+      throw new AppError("qbId is required", 400);
+    }
+
+    const owned = await ensureOwnedQuestionBank(qbId, req.user.id);
+    if (!owned) {
+      throw new AppError("Forbidden", 403);
+    }
+
+    const questions = await prisma.question.findMany({
+      where: {
+        qbId,
+        deletedAt: { isSet: false }
+      },
+      include: {
+        mcqOptions: { orderBy: { optionText: 'asc' } },
+        acceptedAnswers: { orderBy: { answerText: 'asc' } }
+      },
+      orderBy: { createdAt: 'asc' }
+    });
+
+    const seen = new Set<string>();
+    const toDelete: string[] = [];
+
+    for (const q of questions) {
+      const optionsKey = q.type === 'MCQ' 
+        ? q.mcqOptions.map(o => `${o.optionText}:${o.scorePercent}`).join('|')
+        : q.acceptedAnswers.map(a => a.answerText).join('|');
+      
+      const key = `${q.type}|${q.questionText.trim().toLowerCase()}|${optionsKey}`;
+      
+      if (seen.has(key)) {
+        toDelete.push(q.id);
+      } else {
+        seen.add(key);
+      }
+    }
+
+    let deletedCount = 0;
+    
+    if (toDelete.length > 0) {
+      const result = await prisma.question.updateMany({
+        where: { id: { in: toDelete } },
+        data: { deletedAt: new Date() }
+      });
+      deletedCount = result.count;
+    }
+
+    res.status(200).json({ deleted: deletedCount });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function bulkSaveQuestions(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    if (!req.user) {
+      throw new AppError("Unauthorized", 401);
+    }
+    
+    const qbId = getParamAsString(req.params.qbId);
+    if (!qbId) {
+      throw new AppError("qbId is required", 400);
+    }
+
+    const owned = await ensureOwnedQuestionBank(qbId, req.user.id);
+    if (!owned) {
+      throw new AppError("Forbidden", 403);
+    }
+
+    const payload = req.body as {
+      creates?: Array<{
+        type: "MCQ" | "TEXT";
+        questionText: string;
+        options?: Array<{ optionText: string; scorePercent: number }>;
+        acceptedAnswers?: string[];
+      }>;
+      updates?: Array<{
+        id: string;
+        type: "MCQ" | "TEXT";
+        questionText: string;
+        options?: Array<{ optionText: string; scorePercent: number }>;
+        acceptedAnswers?: string[];
+      }>;
+      deletes?: string[];
+    };
+
+    // Use a transaction
+    await prisma.$transaction(async (tx) => {
+      // Deletes
+      if (payload.deletes && payload.deletes.length > 0) {
+        // Find if any have attempts
+        const attemptCount = await tx.attemptQuestion.count({
+          where: { questionId: { in: payload.deletes } }
+        });
+        
+        if (attemptCount > 0) {
+          throw new AppError("Some questions to delete have been used in an attempt and cannot be deleted", 400);
+        }
+
+        await tx.question.updateMany({
+          where: { id: { in: payload.deletes } },
+          data: { deletedAt: new Date() }
+        });
+      }
+
+      // Creates
+      if (payload.creates) {
+        for (const data of payload.creates) {
+          await createQuestionRecord(tx, { ...data, qbId } as any, { includeRelations: false });
+        }
+      }
+
+      // Updates
+      if (payload.updates) {
+        for (const data of payload.updates) {
+          await replaceQuestionRecord(tx, data.id, { ...data, qbId } as any);
+        }
+      }
+    });
+
+    res.status(200).json({ message: "Bulk save completed successfully" });
+  } catch (error) {
+    next(error);
+  }
+}

@@ -52,56 +52,58 @@ export async function scoreAttempt(attemptId: string): Promise<number> {
     const answer = attemptQuestion.answer;
     const rule = ruleByQbId.get(question.qbId);
 
-    if (!rule || !answer) {
+    if (!rule) {
       continue;
     }
 
     const marksPerQuestion = rule.marksPerQuestion;
+    let questionScore = 0;
 
-    if (question.type === "TEXT") {
-      const normalizedAnswer = normalizeTextAnswer(answer.textAnswer);
+    if (answer) {
+      if (question.type === "TEXT") {
+        const normalizedAnswer = normalizeTextAnswer(answer.textAnswer);
 
-      if (!normalizedAnswer) {
-        continue;
+        if (normalizedAnswer) {
+          const acceptedSet = new Set(
+            question.acceptedAnswers.map((item) => normalizeTextAnswer(item.answerText))
+          );
+
+          if (acceptedSet.has(normalizedAnswer)) {
+            questionScore = marksPerQuestion;
+          }
+        }
+      } else {
+        const optionsById = new Map(
+          question.mcqOptions.map((option) => [option.id, option])
+        );
+        const selectedIds = Array.from(
+          new Set(answer.selectedOptions.map((selection) => selection.mcqOptionId))
+        );
+
+        if (selectedIds.length > 0) {
+          const hasZeroPercentSelection = selectedIds.some((id) => {
+            const option = optionsById.get(id);
+            return !option || option.scorePercent === 0;
+          });
+
+          if (!hasZeroPercentSelection) {
+            const totalPercent = selectedIds.reduce((sum, id) => {
+              const option = optionsById.get(id);
+              return sum + (option?.scorePercent ?? 0);
+            }, 0);
+
+            questionScore = Math.floor((totalPercent / 100) * marksPerQuestion);
+          }
+        }
       }
 
-      const acceptedSet = new Set(
-        question.acceptedAnswers.map((item) => normalizeTextAnswer(item.answerText))
-      );
-
-      if (acceptedSet.has(normalizedAnswer)) {
-        total += marksPerQuestion;
-      }
-
-      continue;
+      await prisma.attemptAnswer.update({
+        where: { id: answer.id },
+        data: { marksAwarded: questionScore }
+      });
     }
 
-    const optionsById = new Map(
-      question.mcqOptions.map((option) => [option.id, option])
-    );
-    const selectedIds = Array.from(
-      new Set(answer.selectedOptions.map((selection) => selection.mcqOptionId))
-    );
-
-    if (selectedIds.length === 0) {
-      continue;
-    }
-
-    const hasZeroPercentSelection = selectedIds.some((id) => {
-      const option = optionsById.get(id);
-      return !option || option.scorePercent === 0;
-    });
-
-    if (hasZeroPercentSelection) {
-      continue;
-    }
-
-    const totalPercent = selectedIds.reduce((sum, id) => {
-      const option = optionsById.get(id);
-      return sum + (option?.scorePercent ?? 0);
-    }, 0);
-
-    total += (totalPercent / 100) * marksPerQuestion;
+    total += questionScore;
   }
 
   return Math.floor(total);

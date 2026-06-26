@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { Fragment } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { CsvImportTab } from "@/components/teacher/CsvImportTab";
@@ -10,7 +10,7 @@ import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { useToast } from "@/components/ui/ToastProvider";
 import { getApiErrorMessage } from "@/lib/apiError";
 import { getModules, type ModuleRecord } from "@/lib/api/modules";
-import { deleteQuestion, getQuestions, type QuestionRecord } from "@/lib/api/questions";
+import { getQuestions, deduplicateQuestions, bulkSaveQuestions, type QuestionRecord, type QuestionPayload, type BulkSavePayload } from "@/lib/api/questions";
 import { getQuestionBanks, type QuestionBankRecord } from "@/lib/api/questionbanks";
 import { getSubjects, type SubjectRecord } from "@/lib/api/subjects";
 
@@ -36,6 +36,7 @@ function truncateText(text: string, limit = 80) {
 
 export default function QuestionsPage() {
   const params = useParams<{ subjectId: string; moduleId: string; qbId: string }>();
+  const router = useRouter();
   const { showToast } = useToast();
 
   const subjectId = normalizeParam(params?.subjectId);
@@ -46,14 +47,19 @@ export default function QuestionsPage() {
   const [module, setModule] = useState<ModuleRecord | null>(null);
   const [qb, setQb] = useState<QuestionBankRecord | null>(null);
   const [questions, setQuestions] = useState<QuestionRecord[]>([]);
+  const [draftQuestions, setDraftQuestions] = useState<QuestionRecord[]>([]);
+  const [deletedIds, setDeletedIds] = useState<Set<string>>(new Set());
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [isSavingBulk, setIsSavingBulk] = useState(false);
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"questions" | "csv">("questions");
   const [questionModalOpen, setQuestionModalOpen] = useState(false);
   const [editingQuestion, setEditingQuestion] = useState<QuestionRecord | null>(null);
   const [expandedQuestionId, setExpandedQuestionId] = useState<string | null>(null);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<QuestionRecord | null>(null);
+  const [deduplicating, setDeduplicating] = useState(false);
 
   const loadData = useCallback(async () => {
     if (!subjectId || !moduleId || !qbId) {
@@ -77,6 +83,9 @@ export default function QuestionsPage() {
       setModule(modulesData.find((item) => item.id === moduleId) ?? null);
       setQb(qbsData.find((item) => item.id === qbId) ?? null);
       setQuestions(questionsData);
+      setDraftQuestions(questionsData);
+      setDeletedIds(new Set());
+      setHasUnsavedChanges(false);
     } catch {
       setError("Unable to load questions. Please refresh and try again.");
     } finally {
@@ -89,6 +98,9 @@ export default function QuestionsPage() {
     try {
       const questionsData = await getQuestions(qbId);
       setQuestions(questionsData);
+      setDraftQuestions(questionsData);
+      setDeletedIds(new Set());
+      setHasUnsavedChanges(false);
     } catch {
       showToast("Could not refresh questions list. Please reload the page.", "error");
     }
@@ -97,6 +109,59 @@ export default function QuestionsPage() {
   useEffect(() => {
     void loadData();
   }, [loadData]);
+
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (hasUnsavedChanges) {
+        e.preventDefault();
+        e.returnValue = "";
+      }
+    };
+
+    const handleAnchorClick = (e: MouseEvent) => {
+      if (!hasUnsavedChanges) return;
+
+      const target = e.target as HTMLElement;
+      const anchor = target.closest("a");
+
+      if (anchor && anchor.href) {
+        // Ignore links meant to open in new tab
+        if (anchor.target === "_blank") return;
+
+        const targetUrl = new URL(anchor.href);
+        const currentUrl = new URL(window.location.href);
+
+        // Verify if it's actually navigating to a different page/search route
+        if (
+          targetUrl.origin !== currentUrl.origin ||
+          targetUrl.pathname !== currentUrl.pathname ||
+          targetUrl.search !== currentUrl.search
+        ) {
+          e.preventDefault();
+          e.stopPropagation();
+
+          const confirmLeave = window.confirm(
+            "You have unsaved changes. Are you sure you want to leave this page? Your draft changes will be lost."
+          );
+          if (confirmLeave) {
+            if (targetUrl.origin === currentUrl.origin) {
+              router.push(anchor.pathname + anchor.search + anchor.hash);
+            } else {
+              window.location.href = anchor.href;
+            }
+          }
+        }
+      }
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    document.addEventListener("click", handleAnchorClick, true);
+
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+      document.removeEventListener("click", handleAnchorClick, true);
+    };
+  }, [hasUnsavedChanges, router]);
 
   const breadcrumb = useMemo(
     () => [
@@ -111,25 +176,204 @@ export default function QuestionsPage() {
     [module?.name, moduleId, qb?.name, qbId, subject?.name, subjectId]
   );
 
-  const handleDelete = async () => {
+  const handleDelete = () => {
     if (!pendingDelete) {
       return;
     }
 
+    if (pendingDelete.id.startsWith("draft-")) {
+      setDraftQuestions(current => current.filter(q => q.id !== pendingDelete.id));
+    } else {
+      setDeletedIds(current => {
+        const next = new Set(current);
+        next.add(pendingDelete.id);
+        return next;
+      });
+    }
+    
+    setHasUnsavedChanges(true);
+    showToast("Question deleted from draft");
+    setPendingDelete(null);
+  };
+
+  const handleDuplicate = (question: QuestionRecord, index: number) => {
+    const newDraft = { ...question, id: `draft-${Date.now()}-${Math.random().toString(36).substring(2)}` };
+    const newDrafts = [...draftQuestions];
+    newDrafts.splice(index + 1, 0, newDraft);
+    setDraftQuestions(newDrafts);
+    setHasUnsavedChanges(true);
+    showToast("Question duplicated");
+  };
+
+  const handleDeduplicate = () => {
+    if (questionRows.length === 0) return;
+    setDeduplicating(true);
     try {
-      setDeletingId(pendingDelete.id);
-      await deleteQuestion(pendingDelete.id);
-      showToast("Question deleted");
-      setPendingDelete(null);
-      await refreshQuestions();
-    } catch (error: any) {
-      showToast(getApiErrorMessage(error, "Failed to delete question"), "error");
+      // 1. Group active questions by key
+      const groups: { [key: string]: QuestionRecord[] } = {};
+      for (const q of questionRows) {
+        // Generate unique key matching the backend logic
+        const mcqOpts = [...(q.mcqOptions ?? [])]
+          .map(o => ({ optionText: (o.optionText || "").trim(), scorePercent: Number(o.scorePercent || 0) }))
+          .sort((a, b) => a.optionText.localeCompare(b.optionText));
+        const mcqKey = mcqOpts.map(o => `${o.optionText}:${o.scorePercent}`).join('|');
+
+        const accAnswers = [...(q.acceptedAnswers ?? [])]
+          .map(a => (a.answerText || "").trim().toLowerCase())
+          .sort((a, b) => a.localeCompare(b));
+        const textKey = accAnswers.join('|');
+
+        const optionsKey = q.type === 'MCQ' ? mcqKey : textKey;
+        const key = `${q.type}|${(q.questionText || "").trim().toLowerCase()}|${optionsKey}`;
+
+        if (!groups[key]) {
+          groups[key] = [];
+        }
+        groups[key].push(q);
+      }
+
+      // 2. Identify duplicates to remove
+      let removedCount = 0;
+      const nextDeletedIds = new Set(deletedIds);
+      let nextDraftQuestions = [...draftQuestions];
+
+      for (const key in groups) {
+        const group = groups[key];
+        if (group.length <= 1) continue;
+
+        // Prefer keeping a database question (does not start with draft-)
+        const dbQuestions = group.filter(q => !q.id.startsWith("draft-"));
+        const keepQuestion = dbQuestions.length > 0 ? dbQuestions[0] : group[0];
+
+        // Remove the rest
+        for (const q of group) {
+          if (q.id === keepQuestion.id) continue;
+
+          if (q.id.startsWith("draft-")) {
+            // Remove draft from draftQuestions array
+            nextDraftQuestions = nextDraftQuestions.filter(dq => dq.id !== q.id);
+          } else {
+            // Mark DB question as deleted
+            nextDeletedIds.add(q.id);
+          }
+          removedCount++;
+        }
+      }
+
+      if (removedCount > 0) {
+        setDraftQuestions(nextDraftQuestions);
+        setDeletedIds(nextDeletedIds);
+        setHasUnsavedChanges(true);
+        showToast(`Removed ${removedCount} duplicate questions`);
+      } else {
+        showToast("No duplicates found");
+      }
+    } catch (error) {
+      showToast("Failed to remove duplicates", "error");
     } finally {
-      setDeletingId(null);
+      setDeduplicating(false);
     }
   };
 
-  const questionRows = questions.filter((question) => question.deletedAt === null);
+  const questionRows = draftQuestions.filter((question) => !deletedIds.has(question.id));
+
+  const handleApplyChanges = useCallback((values: any, questionId?: string) => {
+    const draftRecord: Partial<QuestionRecord> = {
+      qbId: values.qbId,
+      type: values.type,
+      questionText: values.questionText,
+      mcqOptions: values.type === "MCQ" ? values.options.map((o: any) => ({
+        id: `draft-opt-${Math.random().toString(36).substring(2)}`,
+        optionText: o.optionText,
+        scorePercent: o.scorePercent
+      })) : [],
+      acceptedAnswers: values.type === "TEXT" ? values.acceptedAnswers.map((a: string) => ({
+        id: `draft-ans-${Math.random().toString(36).substring(2)}`,
+        answerText: a
+      })) : [],
+      deletedAt: null
+    };
+
+    if (questionId) {
+      setDraftQuestions(current => current.map(q => q.id === questionId ? { ...q, ...draftRecord } as QuestionRecord : q));
+    } else {
+      const newDraft = { ...draftRecord, id: `draft-${Date.now()}-${Math.random().toString(36).substring(2)}`, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() } as unknown as QuestionRecord;
+      setDraftQuestions(current => [newDraft, ...current]);
+    }
+    setHasUnsavedChanges(true);
+  }, []);
+
+  const handleBulkSave = async () => {
+    if (!qbId) return;
+    try {
+      setIsSavingBulk(true);
+      const payload: BulkSavePayload = { creates: [], updates: [], deletes: Array.from(deletedIds) };
+
+      for (const draft of draftQuestions) {
+        if (deletedIds.has(draft.id)) continue;
+
+        if (draft.id.startsWith("draft-")) {
+          // This is a create
+          payload.creates.push({
+            qbId: draft.qbId,
+            type: draft.type as "MCQ" | "TEXT",
+            questionText: draft.questionText,
+            options: draft.mcqOptions?.map(o => ({ optionText: o.optionText, scorePercent: o.scorePercent })) ?? [],
+            acceptedAnswers: draft.acceptedAnswers?.map(a => a.answerText) ?? []
+          });
+        } else {
+          // Check if updated by comparing against original
+          const original = questions.find(q => q.id === draft.id);
+          if (!original) continue; // Should not happen
+          
+          // Simple JSON diff to check if changed
+          // Since we might have mangled the IDs inside mcqOptions, let's compare the core values
+          const extractCore = (q: QuestionRecord) => ({
+            questionText: q.questionText,
+            type: q.type,
+            options: q.mcqOptions?.map(o => ({ optionText: o.optionText, scorePercent: o.scorePercent })) ?? [],
+            acceptedAnswers: q.acceptedAnswers?.map(a => a.answerText) ?? []
+          });
+
+          const isChanged = JSON.stringify(extractCore(draft)) !== JSON.stringify(extractCore(original));
+          if (isChanged) {
+            payload.updates.push({
+              id: draft.id,
+              qbId: draft.qbId,
+              type: draft.type as "MCQ" | "TEXT",
+              questionText: draft.questionText,
+              options: draft.mcqOptions?.map(o => ({ optionText: o.optionText, scorePercent: o.scorePercent })) ?? [],
+              acceptedAnswers: draft.acceptedAnswers?.map(a => a.answerText) ?? []
+            });
+          }
+        }
+      }
+
+      await bulkSaveQuestions(qbId, payload);
+      showToast("All changes saved successfully");
+      await refreshQuestions();
+    } catch (error: any) {
+      showToast(getApiErrorMessage(error, "Failed to save changes"), "error");
+    } finally {
+      setIsSavingBulk(false);
+    }
+  };
+
+  const currentEditIndex = editingQuestion ? questionRows.findIndex((q) => q.id === editingQuestion.id) : -1;
+  const hasPreviousEdit = currentEditIndex > 0;
+  const hasNextEdit = currentEditIndex >= 0 && currentEditIndex < questionRows.length - 1;
+
+  const handlePreviousEdit = useCallback(() => {
+    if (hasPreviousEdit) {
+      setEditingQuestion(questionRows[currentEditIndex - 1]);
+    }
+  }, [hasPreviousEdit, questionRows, currentEditIndex]);
+
+  const handleNextEdit = useCallback(() => {
+    if (hasNextEdit) {
+      setEditingQuestion(questionRows[currentEditIndex + 1]);
+    }
+  }, [hasNextEdit, questionRows, currentEditIndex]);
 
   return (
     <div className="space-y-6">
@@ -155,21 +399,46 @@ export default function QuestionsPage() {
 
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <h1 className="text-3xl font-semibold text-slate-900">{qb?.name ?? "Question bank"}</h1>
+            <div className="flex items-center gap-3">
+              <h1 className="text-3xl font-semibold text-slate-900">{qb?.name ?? "Question bank"}</h1>
+              <span className="inline-flex items-center justify-center rounded-full bg-slate-100 px-3 py-1 text-sm font-medium text-slate-700">
+                Total Questions: {questionRows.length}
+              </span>
+            </div>
             <p className="mt-2 max-w-2xl text-sm text-slate-500">
               Manage questions directly or import them in bulk using CSV.
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() => {
-              setEditingQuestion(null);
-              setQuestionModalOpen(true);
-            }}
-            className="inline-flex items-center justify-center rounded-xl bg-[var(--primary)] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[var(--primary-hover)]"
-          >
-            Add Question
-          </button>
+          <div className="flex items-center gap-3">
+            {hasUnsavedChanges ? (
+              <button
+                type="button"
+                onClick={handleBulkSave}
+                disabled={isSavingBulk}
+                className="inline-flex items-center justify-center rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-500 disabled:opacity-60"
+              >
+                {isSavingBulk ? "Saving..." : "Save All Changes"}
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={handleDeduplicate}
+              disabled={deduplicating || questionRows.length === 0}
+              className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {deduplicating ? "Removing..." : "Remove Duplicates"}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setEditingQuestion(null);
+                setQuestionModalOpen(true);
+              }}
+              className="inline-flex items-center justify-center rounded-xl bg-[var(--primary)] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[var(--primary-hover)]"
+            >
+              Add Question
+            </button>
+          </div>
         </div>
       </div>
 
@@ -231,6 +500,9 @@ export default function QuestionsPage() {
                 <table className="min-w-full divide-y divide-slate-200">
                   <thead className="bg-slate-50">
                     <tr>
+                      <th className="w-16 px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                        #
+                      </th>
                       <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
                         Type
                       </th>
@@ -243,12 +515,15 @@ export default function QuestionsPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 bg-white">
-                    {questionRows.map((question) => {
+                    {questionRows.map((question, index) => {
                       const expanded = expandedQuestionId === question.id;
 
                       return (
                         <Fragment key={question.id}>
                           <tr key={question.id} className="align-top transition hover:bg-slate-50/60">
+                            <td className="px-4 py-4 align-top text-sm font-medium text-slate-500">
+                              {index + 1}
+                            </td>
                             <td className="px-4 py-4 align-top">
                               <TypeBadge type={question.type} />
                             </td>
@@ -275,13 +550,16 @@ export default function QuestionsPage() {
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={() => setPendingDelete(question)}
-                                  disabled={deletingId === question.id}
-                                  className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-rose-50 hover:text-rose-600 disabled:cursor-not-allowed disabled:opacity-60"
+                                  onClick={() => handleDuplicate(question, index)}
+                                  className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
                                 >
-                                  {deletingId === question.id ? (
-                                    <span className="inline-flex h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                                  ) : null}
+                                  Duplicate
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setPendingDelete(question)}
+                                  className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-rose-50 hover:text-rose-600"
+                                >
                                   Delete
                                 </button>
                               </div>
@@ -295,7 +573,7 @@ export default function QuestionsPage() {
                                     MCQ options
                                   </p>
                                   <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-                                    {question.mcqOptions.map((option) => (
+                                    {question.mcqOptions?.map((option) => (
                                       <div key={option.id ?? option.optionText} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
                                         <span className="font-medium text-slate-900">{option.optionText}</span>
                                         <span className="ml-2 text-slate-500">({option.scorePercent}%)</span>
@@ -332,7 +610,10 @@ export default function QuestionsPage() {
               </div>
             )
           ) : (
-            <CsvImportTab qbId={qbId} />
+            <CsvImportTab qbId={qbId} onImported={() => {
+              void refreshQuestions();
+              setActiveTab("questions");
+            }} />
           )}
         </div>
       </div>
@@ -341,17 +622,21 @@ export default function QuestionsPage() {
         open={questionModalOpen}
         qbId={qbId}
         question={editingQuestion}
+        questionNumber={currentEditIndex >= 0 ? currentEditIndex + 1 : undefined}
         onOpenChange={setQuestionModalOpen}
-        onSaved={refreshQuestions}
+        onApply={handleApplyChanges}
+        onPrevious={handlePreviousEdit}
+        onNext={handleNextEdit}
+        hasPrevious={hasPreviousEdit}
+        hasNext={hasNextEdit}
       />
 
       <ConfirmDialog
         open={Boolean(pendingDelete)}
         title="Delete question"
-        message="Delete this question?"
-        loading={Boolean(deletingId)}
+        message="Remove this question from the draft? (Click Save All Changes to persist)"
         onCancel={() => setPendingDelete(null)}
-        onConfirm={() => void handleDelete()}
+        onConfirm={handleDelete}
       />
     </div>
   );

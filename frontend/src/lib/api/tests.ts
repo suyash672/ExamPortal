@@ -6,7 +6,7 @@ export type TestListItem = {
   id: string;
   teacherId: string;
   title: string;
-  enrollmentKey: string;
+  enrollmentKey: string | null;
   startTime: string;
   endTime: string;
   durationMinutes: number;
@@ -20,11 +20,15 @@ export type TestQbRulePayload = {
   qbId: string;
   questionsToPick: number;
   marksPerQuestion: number;
+  randomQuestions: boolean;
+  randomOrder: boolean;
+  uniqueQuestions: boolean;
+  shuffleOptions: boolean;
 };
 
 export type CreateTestPayload = {
   title: string;
-  enrollmentKey: string;
+  enrollmentKey: string | null;
   startTime: string;
   endTime: string;
   durationMinutes: number;
@@ -35,7 +39,7 @@ export type CreatedTest = {
   id: string;
   teacherId: string;
   title: string;
-  enrollmentKey: string;
+  enrollmentKey: string | null;
   startTime: string;
   endTime: string;
   durationMinutes: number;
@@ -48,6 +52,10 @@ export type CreatedTest = {
     qbId: string;
     questionsToPick: number;
     marksPerQuestion: number;
+    randomQuestions: boolean;
+    randomOrder: boolean;
+    uniqueQuestions: boolean;
+    shuffleOptions: boolean;
   }>;
 };
 
@@ -58,6 +66,10 @@ export type TestDetails = TestListItem & {
     qbId: string;
     questionsToPick: number;
     marksPerQuestion: number;
+    randomQuestions: boolean;
+    randomOrder: boolean;
+    uniqueQuestions: boolean;
+    shuffleOptions: boolean;
     questionBank: {
       id: string;
       name: string;

@@ -9,6 +9,7 @@ export type StudentTestSummary = {
   totalMarks: number;
   enrolled: boolean;
   enrollmentId: string | null;
+  hasEnrollmentKey: boolean;
   attempt: {
     id: string;
     isSubmitted: boolean;

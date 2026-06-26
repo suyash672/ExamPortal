@@ -422,6 +422,13 @@ export default function AttemptPage() {
                 <h2 className="mt-2 text-xl font-semibold text-slate-900">
                   {currentQuestion?.question.questionText}
                 </h2>
+                {currentQuestion?.question.type === "MCQ" ? (
+                  <p className="mt-1 text-sm font-medium text-slate-500">
+                    {currentQuestion.question.mcqMode === "single"
+                      ? "(Select one correct option)"
+                      : "(Select all correct options)"}
+                  </p>
+                ) : null}
               </div>
 
               <p

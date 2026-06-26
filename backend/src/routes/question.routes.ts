@@ -5,9 +5,12 @@ import {
   createQuestion,
   deleteQuestion,
   getQuestions,
-  updateQuestion
+  updateQuestion,
+  deduplicateQuestions,
+  bulkSaveQuestions
 } from "../controllers/question.controller";
 import { importCsv } from "../controllers/questioncsv.controller";
+import { importMoodleHtml } from "../controllers/questionhtml.controller";
 import { requireAuth, requireRole } from "../middleware/auth";
 import { requireQbOwnership, requireQuestionOwnership } from "../middleware/ownership";
 import { validate } from "../middleware/validate";
@@ -36,6 +39,11 @@ questionRouter.put(
   validate(createQuestionSchema),
   updateQuestion
 );
+questionRouter.post(
+  "/api/banks/:qbId/questions/bulk",
+  requireQbOwnership,
+  bulkSaveQuestions
+);
 questionRouter.delete("/api/questions/:id", requireQuestionOwnership, deleteQuestion);
 questionRouter.post(
   "/api/questions/import-csv",
@@ -46,6 +54,27 @@ questionRouter.post(
     })
   ),
   importCsv
+);
+
+questionRouter.post(
+  "/api/questions/deduplicate",
+  validate(
+    z.object({
+      qbId: z.string().regex(/^[a-fA-F0-9]{24}$/)
+    })
+  ),
+  deduplicateQuestions
+);
+
+questionRouter.post(
+  "/api/questions/import-moodle-html",
+  upload.single("file"),
+  validate(
+    z.object({
+      qbId: z.string().regex(/^[a-fA-F0-9]{24}$/)
+    })
+  ),
+  importMoodleHtml
 );
 
 export default questionRouter;

@@ -28,6 +28,10 @@ type SelectedRule = {
   totalQuestions: number;
   questionsToPickInput: string;
   marksPerQuestionInput: string;
+  randomQuestions: boolean;
+  randomOrder: boolean;
+  uniqueQuestions: boolean;
+  shuffleOptions: boolean;
 };
 
 type BasicValidation = {
@@ -109,19 +113,37 @@ export default function CreateTestPage() {
 
   const [step, setStep] = useState<StepId>(1);
   const [showEnrollmentKey, setShowEnrollmentKey] = useState(false);
+  const [requireEnrollmentKey, setRequireEnrollmentKey] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
   const [title, setTitle] = useState("");
   const [enrollmentKey, setEnrollmentKey] = useState("");
   const [startTimeInput, setStartTimeInput] = useState("");
   const [endTimeInput, setEndTimeInput] = useState("");
-  const [durationMinutesInput, setDurationMinutesInput] = useState("");
+  const [durationMinutesInput, setDurationMinutesInput] = useState("60");
   const [minDateTime, setMinDateTime] = useState("");
+
+  const [globalRulesEnabled, setGlobalRulesEnabled] = useState(false);
+  const [globalRules, setGlobalRules] = useState({
+    randomQuestions: true,
+    randomOrder: true,
+    uniqueQuestions: false,
+    shuffleOptions: false
+  });
 
   useEffect(() => {
     const now = new Date();
-    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
-    setMinDateTime(now.toISOString().slice(0, 16));
+    const offsetMs = now.getTimezoneOffset() * 60000;
+    
+    const localNow = new Date(now.getTime() - offsetMs);
+    const localNowStr = localNow.toISOString().slice(0, 16);
+    
+    setMinDateTime(localNowStr);
+    setStartTimeInput(localNowStr);
+
+    const minEnd = new Date(now.getTime() + 60 * 60000);
+    const localMinEnd = new Date(minEnd.getTime() - offsetMs);
+    setEndTimeInput(localMinEnd.toISOString().slice(0, 16));
   }, []);
 
   const [treeLoading, setTreeLoading] = useState(true);
@@ -139,12 +161,14 @@ export default function CreateTestPage() {
       errors.title = "Title must be at most 200 characters.";
     }
 
-    if (!enrollmentKey.trim()) {
-      errors.enrollmentKey = "Enrollment key is required.";
-    } else if (/\s/.test(enrollmentKey)) {
-      errors.enrollmentKey = "Enrollment key cannot contain spaces.";
-    } else if (enrollmentKey.length < 4 || enrollmentKey.length > 50) {
-      errors.enrollmentKey = "Enrollment key must be between 4 and 50 characters.";
+    if (requireEnrollmentKey) {
+      if (!enrollmentKey.trim()) {
+        errors.enrollmentKey = "Enrollment key is required.";
+      } else if (/\s/.test(enrollmentKey)) {
+        errors.enrollmentKey = "Enrollment key cannot contain spaces.";
+      } else if (enrollmentKey.length < 4 || enrollmentKey.length > 50) {
+        errors.enrollmentKey = "Enrollment key must be between 4 and 50 characters.";
+      }
     }
 
     const startDate = parseLocalDateTime(startTimeInput);
@@ -297,9 +321,13 @@ export default function CreateTestPage() {
           qbName: qb.name,
           moduleName: module.name,
           subjectName: subject.name,
-          totalQuestions: qb._count.questions,
+          totalQuestions: qb._count?.questions ?? 0,
           questionsToPickInput: "1",
-          marksPerQuestionInput: "1"
+          marksPerQuestionInput: "1",
+          randomQuestions: true,
+          randomOrder: true,
+          uniqueQuestions: false,
+          shuffleOptions: false
         };
       } else {
         delete next[qb.id];
@@ -343,7 +371,11 @@ export default function CreateTestPage() {
     const qbRules = selectedRulesList.map((rule) => ({
       qbId: rule.qbId,
       questionsToPick: toPositiveInteger(rule.questionsToPickInput) ?? 0,
-      marksPerQuestion: toPositiveInteger(rule.marksPerQuestionInput) ?? 0
+      marksPerQuestion: toPositiveInteger(rule.marksPerQuestionInput) ?? 0,
+      randomQuestions: globalRulesEnabled ? globalRules.randomQuestions : rule.randomQuestions,
+      randomOrder: globalRulesEnabled ? globalRules.randomOrder : rule.randomOrder,
+      uniqueQuestions: globalRulesEnabled ? globalRules.uniqueQuestions : rule.uniqueQuestions,
+      shuffleOptions: globalRulesEnabled ? globalRules.shuffleOptions : rule.shuffleOptions
     }));
 
     try {
@@ -351,7 +383,7 @@ export default function CreateTestPage() {
 
       await createTest({
         title: title.trim(),
-        enrollmentKey: enrollmentKey.trim(),
+        enrollmentKey: requireEnrollmentKey ? enrollmentKey.trim() : null,
         startTime: startDate.toISOString(),
         endTime: endDate.toISOString(),
         durationMinutes: duration,
@@ -408,31 +440,47 @@ export default function CreateTestPage() {
               {basicValidation.title ? <p className="text-xs text-rose-600">{basicValidation.title}</p> : null}
             </div>
 
-            <div className="space-y-1.5">
-              <label htmlFor="enrollmentKey" className="text-sm font-medium text-slate-700">
-                Enrollment Key
-              </label>
-              <div className="flex gap-2">
+            <div className="space-y-1.5 md:col-span-2">
+              <label className="flex items-center gap-2 text-sm font-medium text-slate-700 cursor-pointer">
                 <input
-                  id="enrollmentKey"
-                  type={showEnrollmentKey ? "text" : "password"}
-                  value={enrollmentKey}
-                  onChange={(event) => setEnrollmentKey(event.target.value)}
-                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 transition focus:border-[var(--ring)] focus:ring-2 focus:ring-[var(--ring)]/30"
+                  type="checkbox"
+                  checked={requireEnrollmentKey}
+                  onChange={(e) => setRequireEnrollmentKey(e.target.checked)}
+                  className="h-4 w-4 rounded border-slate-300 text-[var(--primary)] focus:ring-[var(--ring)]"
                 />
-                <button
-                  type="button"
-                  onClick={() => setShowEnrollmentKey((value) => !value)}
-                  className="rounded-xl border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-                >
-                  {showEnrollmentKey ? "Hide" : "Show"}
-                </button>
-              </div>
-              <p className="text-xs text-slate-500">Use a key without spaces.</p>
-              {basicValidation.enrollmentKey ? (
-                <p className="text-xs text-rose-600">{basicValidation.enrollmentKey}</p>
-              ) : null}
+                <span>Require Enrollment Key for students to join this test</span>
+              </label>
             </div>
+
+            {requireEnrollmentKey && (
+              <div className="space-y-1.5">
+                <label htmlFor="enrollmentKey" className="text-sm font-medium text-slate-700">
+                  Enrollment Key
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    id="enrollmentKey"
+                    type={showEnrollmentKey ? "text" : "password"}
+                    value={enrollmentKey}
+                    onChange={(event) => setEnrollmentKey(event.target.value)}
+                    className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 transition focus:border-[var(--ring)] focus:ring-2 focus:ring-[var(--ring)]/30"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowEnrollmentKey((value) => !value)}
+                    className="rounded-xl border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+                  >
+                    {showEnrollmentKey ? "Hide" : "Show"}
+                  </button>
+                </div>
+                <p className="text-xs text-slate-500">Use a key without spaces.</p>
+                {basicValidation.enrollmentKey ? (
+                  <p className="text-xs text-rose-600">{basicValidation.enrollmentKey}</p>
+                ) : null}
+              </div>
+            )}
+
+
 
             <div className="space-y-1.5">
               <label htmlFor="duration" className="text-sm font-medium text-slate-700">
@@ -443,7 +491,20 @@ export default function CreateTestPage() {
                 type="number"
                 min={1}
                 value={durationMinutesInput}
-                onChange={(event) => setDurationMinutesInput(event.target.value)}
+                onChange={(event) => {
+                  const newDurationStr = event.target.value;
+                  setDurationMinutesInput(newDurationStr);
+                  const duration = toPositiveInteger(newDurationStr);
+                  if (duration && startTimeInput) {
+                    const start = new Date(startTimeInput);
+                    if (!isNaN(start.getTime())) {
+                      const end = new Date(start.getTime() + duration * 60000);
+                      const offsetMs = end.getTimezoneOffset() * 60000;
+                      const localEnd = new Date(end.getTime() - offsetMs);
+                      setEndTimeInput(localEnd.toISOString().slice(0, 16));
+                    }
+                  }
+                }}
                 className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 transition focus:border-[var(--ring)] focus:ring-2 focus:ring-[var(--ring)]/30"
               />
               {basicValidation.durationMinutes ? (
@@ -460,7 +521,20 @@ export default function CreateTestPage() {
                 type="datetime-local"
                 min={minDateTime}
                 value={startTimeInput}
-                onChange={(event) => setStartTimeInput(event.target.value)}
+                onChange={(event) => {
+                  const newStartStr = event.target.value;
+                  setStartTimeInput(newStartStr);
+                  if (newStartStr) {
+                    const start = new Date(newStartStr);
+                    if (!isNaN(start.getTime())) {
+                      const duration = toPositiveInteger(durationMinutesInput) || 60;
+                      const end = new Date(start.getTime() + duration * 60000);
+                      const offsetMs = end.getTimezoneOffset() * 60000;
+                      const localEnd = new Date(end.getTime() - offsetMs);
+                      setEndTimeInput(localEnd.toISOString().slice(0, 16));
+                    }
+                  }
+                }}
                 className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 transition focus:border-[var(--ring)] focus:ring-2 focus:ring-[var(--ring)]/30"
               />
               {basicValidation.startTime ? <p className="text-xs text-rose-600">{basicValidation.startTime}</p> : null}
@@ -513,6 +587,73 @@ export default function CreateTestPage() {
             </div>
           ) : null}
 
+          {/* Global Rules Panel */}
+          <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <label className="flex items-center gap-3 text-sm font-semibold text-slate-900 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={globalRulesEnabled}
+                onChange={(event) => setGlobalRulesEnabled(event.target.checked)}
+                className="h-4 w-4 rounded border-slate-300 text-[var(--primary)] focus:ring-[var(--ring)]"
+              />
+              <span>Apply Global Settings to All Selected Question Banks</span>
+            </label>
+            <p className="mt-1 text-xs text-slate-500 pl-7">
+              When enabled, these randomization and shuffling settings will override individual question bank options.
+            </p>
+
+            <div className={`mt-4 pl-7 grid gap-4 sm:grid-cols-2 md:grid-cols-4 transition-all duration-200 ${globalRulesEnabled ? "opacity-100 pointer-events-auto" : "opacity-40 pointer-events-none"}`}>
+              <label className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.1em] text-slate-700 cursor-pointer">
+                <input
+                  type="checkbox"
+                  disabled={!globalRulesEnabled}
+                  checked={globalRules.randomQuestions}
+                  onChange={(event) =>
+                    setGlobalRules((prev) => ({ ...prev, randomQuestions: event.target.checked }))
+                  }
+                  className="h-4 w-4 rounded border-slate-300 text-[var(--primary)] focus:ring-[var(--ring)]"
+                />
+                <span>Random Questions</span>
+              </label>
+              <label className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.1em] text-slate-700 cursor-pointer">
+                <input
+                  type="checkbox"
+                  disabled={!globalRulesEnabled}
+                  checked={globalRules.randomOrder}
+                  onChange={(event) =>
+                    setGlobalRules((prev) => ({ ...prev, randomOrder: event.target.checked }))
+                  }
+                  className="h-4 w-4 rounded border-slate-300 text-[var(--primary)] focus:ring-[var(--ring)]"
+                />
+                <span>Random Order</span>
+              </label>
+              <label className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.1em] text-slate-700 cursor-pointer">
+                <input
+                  type="checkbox"
+                  disabled={!globalRulesEnabled}
+                  checked={globalRules.uniqueQuestions}
+                  onChange={(event) =>
+                    setGlobalRules((prev) => ({ ...prev, uniqueQuestions: event.target.checked }))
+                  }
+                  className="h-4 w-4 rounded border-slate-300 text-[var(--primary)] focus:ring-[var(--ring)]"
+                />
+                <span>Unique Questions per Student</span>
+              </label>
+              <label className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.1em] text-slate-700 cursor-pointer">
+                <input
+                  type="checkbox"
+                  disabled={!globalRulesEnabled}
+                  checked={globalRules.shuffleOptions}
+                  onChange={(event) =>
+                    setGlobalRules((prev) => ({ ...prev, shuffleOptions: event.target.checked }))
+                  }
+                  className="h-4 w-4 rounded border-slate-300 text-[var(--primary)] focus:ring-[var(--ring)]"
+                />
+                <span>Shuffle Options</span>
+              </label>
+            </div>
+          </div>
+
           {treeLoading ? (
             <div className="mt-5 space-y-3">
               {Array.from({ length: 4 }).map((_, index) => (
@@ -555,7 +696,7 @@ export default function CreateTestPage() {
                                       <span className="font-medium">{bank.name}</span>
                                     </span>
                                     <span className="text-xs text-slate-500">
-                                      {bank._count.questions} questions
+                                      {bank._count?.questions ?? 0} questions
                                     </span>
                                   </label>
 
@@ -601,6 +742,70 @@ export default function CreateTestPage() {
                                             className="w-24 rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900"
                                           />
                                         </div>
+                                      </div>
+
+                                      <div className="md:col-span-2 flex flex-wrap items-center gap-4 mt-1 border-t border-slate-100 pt-3">
+                                        <label className={`flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.1em] text-slate-700 ${globalRulesEnabled ? "opacity-60 cursor-not-allowed" : "cursor-pointer"}`}>
+                                          <input
+                                            type="checkbox"
+                                            disabled={globalRulesEnabled}
+                                            checked={globalRulesEnabled ? globalRules.randomQuestions : selected.randomQuestions}
+                                            onChange={(event) =>
+                                              updateRule(bank.id, {
+                                                randomQuestions: event.target.checked
+                                              })
+                                            }
+                                            className="h-4 w-4 rounded border-slate-300 text-[var(--primary)] focus:ring-[var(--ring)] disabled:opacity-50"
+                                          />
+                                          <span>Random Questions</span>
+                                        </label>
+                                        <label className={`flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.1em] text-slate-700 ${globalRulesEnabled ? "opacity-60 cursor-not-allowed" : "cursor-pointer"}`}>
+                                          <input
+                                            type="checkbox"
+                                            disabled={globalRulesEnabled}
+                                            checked={globalRulesEnabled ? globalRules.randomOrder : selected.randomOrder}
+                                            onChange={(event) =>
+                                              updateRule(bank.id, {
+                                                randomOrder: event.target.checked
+                                              })
+                                            }
+                                            className="h-4 w-4 rounded border-slate-300 text-[var(--primary)] focus:ring-[var(--ring)] disabled:opacity-50"
+                                          />
+                                          <span>Random Order</span>
+                                        </label>
+                                        <label className={`flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.1em] text-slate-700 ${globalRulesEnabled ? "opacity-60 cursor-not-allowed" : "cursor-pointer"}`}>
+                                          <input
+                                            type="checkbox"
+                                            disabled={globalRulesEnabled}
+                                            checked={globalRulesEnabled ? globalRules.uniqueQuestions : selected.uniqueQuestions}
+                                            onChange={(event) =>
+                                              updateRule(bank.id, {
+                                                uniqueQuestions: event.target.checked
+                                              })
+                                            }
+                                            className="h-4 w-4 rounded border-slate-300 text-[var(--primary)] focus:ring-[var(--ring)] disabled:opacity-50"
+                                          />
+                                          <span>Unique Questions per Student</span>
+                                        </label>
+                                        <label className={`flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.1em] text-slate-700 ${globalRulesEnabled ? "opacity-60 cursor-not-allowed" : "cursor-pointer"}`}>
+                                          <input
+                                            type="checkbox"
+                                            disabled={globalRulesEnabled}
+                                            checked={globalRulesEnabled ? globalRules.shuffleOptions : selected.shuffleOptions}
+                                            onChange={(event) =>
+                                              updateRule(bank.id, {
+                                                shuffleOptions: event.target.checked
+                                              })
+                                            }
+                                            className="h-4 w-4 rounded border-slate-300 text-[var(--primary)] focus:ring-[var(--ring)] disabled:opacity-50"
+                                          />
+                                          <span>Shuffle Options</span>
+                                        </label>
+                                        {globalRulesEnabled && (
+                                          <span className="text-[10px] text-teal-600 font-semibold uppercase tracking-[0.05em] ml-auto">
+                                            Overridden by global rules
+                                          </span>
+                                        )}
                                       </div>
 
                                       {ruleError ? (
@@ -662,7 +867,7 @@ export default function CreateTestPage() {
               </div>
               <div>
                 <dt className="font-medium text-slate-900">Enrollment Key</dt>
-                <dd>{enrollmentKey.trim()}</dd>
+                <dd>{requireEnrollmentKey ? enrollmentKey.trim() : "None (optional)"}</dd>
               </div>
               <div>
                 <dt className="font-medium text-slate-900">Start</dt>
@@ -693,6 +898,10 @@ export default function CreateTestPage() {
                 {selectedRulesList.map((rule) => {
                   const pick = toPositiveInteger(rule.questionsToPickInput) ?? 0;
                   const marks = toPositiveInteger(rule.marksPerQuestionInput) ?? 0;
+                  const randomQuestions = globalRulesEnabled ? globalRules.randomQuestions : rule.randomQuestions;
+                  const randomOrder = globalRulesEnabled ? globalRules.randomOrder : rule.randomOrder;
+                  const uniqueQuestions = globalRulesEnabled ? globalRules.uniqueQuestions : rule.uniqueQuestions;
+                  const shuffleOptions = globalRulesEnabled ? globalRules.shuffleOptions : rule.shuffleOptions;
 
                   return (
                     <tr key={rule.qbId}>
@@ -701,6 +910,24 @@ export default function CreateTestPage() {
                         <p className="text-xs text-slate-500">
                           {rule.subjectName} / {rule.moduleName}
                         </p>
+                        <div className="mt-1 flex flex-wrap gap-2">
+                          <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ${randomQuestions ? "bg-emerald-50 text-emerald-800" : "bg-slate-100 text-slate-600"}`}>
+                            {randomQuestions ? "Random Selection" : "Ordered Selection"}
+                          </span>
+                          <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ${randomOrder ? "bg-emerald-50 text-emerald-800" : "bg-slate-100 text-slate-600"}`}>
+                            {randomOrder ? "Random Order" : "Default Order"}
+                          </span>
+                          {uniqueQuestions && (
+                            <span className="inline-flex rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-800">
+                              Unique per Student
+                            </span>
+                          )}
+                          {shuffleOptions && (
+                            <span className="inline-flex rounded-full bg-teal-50 px-2 py-0.5 text-[10px] font-semibold text-teal-800">
+                              Shuffle Options
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-4 py-3 text-sm text-slate-700">{pick}</td>
                       <td className="px-4 py-3 text-sm text-slate-700">{marks}</td>

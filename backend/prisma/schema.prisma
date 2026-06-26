@@ -124,7 +124,7 @@ model Test {
   teacherId       String       @db.ObjectId
   teacher         Teacher      @relation(fields: [teacherId], references: [id])
   title           String
-  enrollmentKey   String
+  enrollmentKey   String?
   startTime       DateTime
   endTime         DateTime
   durationMinutes Int
@@ -143,6 +143,10 @@ model TestQbRule {
   questionBank     QuestionBank @relation(fields: [qbId], references: [id])
   questionsToPick  Int
   marksPerQuestion Int
+  randomQuestions  Boolean      @default(true)
+  randomOrder      Boolean      @default(true)
+  uniqueQuestions  Boolean      @default(false)
+  shuffleOptions   Boolean      @default(false)
 }
 
 model Enrollment {

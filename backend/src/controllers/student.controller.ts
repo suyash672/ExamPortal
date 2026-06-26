@@ -11,6 +11,23 @@ import {
 
 const prisma = new PrismaClient();
 
+function stableShuffle<T>(array: T[], seed: string, getId: (item: T) => string): T[] {
+  const hashCode = (str: string) => {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      hash = (hash << 5) - hash + str.charCodeAt(i);
+      hash |= 0;
+    }
+    return hash;
+  };
+
+  return [...array].sort((a, b) => {
+    const hashA = hashCode(seed + "_" + getId(a));
+    const hashB = hashCode(seed + "_" + getId(b));
+    return hashA - hashB;
+  });
+}
+
 function nowDate(): Date {
   return new Date();
 }
@@ -41,6 +58,8 @@ function serializeAttempt(attempt: any, now: Date) {
         attempt.enrollment.test.durationMinutes
       );
 
+  const rules = attempt.enrollment?.test?.testQbRules ?? [];
+
   return {
     id: attempt.id,
     enrollmentId: attempt.enrollmentId,
@@ -51,30 +70,40 @@ function serializeAttempt(attempt: any, now: Date) {
     score: attempt.score,
     totalMarks: attempt.enrollment.test.totalMarks,
     timeRemainingSeconds,
-    attemptQuestions: attempt.questions.map((item: any) => ({
-      id: item.id,
-      attemptId: item.attemptId,
-      questionId: item.questionId,
-      question: {
-        id: item.question.id,
-        type: item.question.type,
-        questionText: item.question.questionText,
-        qbId: item.question.qbId,
-        mcqMode:
-          item.question.type === "MCQ" &&
-          item.question.mcqOptions.filter((option: any) => option.scorePercent === 100)
-            .length === 1
-            ? "single"
-            : "multi",
-        mcqOptions:
-          item.question.type === "MCQ"
-            ? item.question.mcqOptions.map((option: any) => ({
-                id: option.id,
-                optionText: option.optionText
-              }))
-            : []
-      },
-      answer: item.answer
+    attemptQuestions: attempt.questions.map((item: any) => {
+      const rule = rules.find((r: any) => r.qbId === item.question.qbId);
+      const shuffleOptions = rule?.shuffleOptions ?? false;
+
+      return {
+        id: item.id,
+        attemptId: item.attemptId,
+        questionId: item.questionId,
+        question: {
+          id: item.question.id,
+          type: item.question.type,
+          questionText: item.question.questionText,
+          qbId: item.question.qbId,
+          mcqMode:
+            item.question.type === "MCQ" &&
+            item.question.mcqOptions.filter((option: any) => option.scorePercent === 100)
+              .length === 1
+              ? "single"
+              : "multi",
+          mcqOptions:
+            item.question.type === "MCQ"
+              ? (() => {
+                  const opts = item.question.mcqOptions.map((option: any) => ({
+                    id: option.id,
+                    optionText: option.optionText
+                  }));
+                  if (shuffleOptions) {
+                    return stableShuffle(opts, attempt.id, (opt: any) => opt.id);
+                  }
+                  return opts;
+                })()
+              : []
+        },
+        answer: item.answer
         ? {
             id: item.answer.id,
             textAnswer: item.answer.textAnswer,
@@ -83,7 +112,8 @@ function serializeAttempt(attempt: any, now: Date) {
             )
           }
         : null
-    }))
+      };
+    })
   };
 }
 
@@ -178,6 +208,7 @@ export async function getAvailableTests(
     totalMarks: number;
     enrolled: boolean;
     enrollmentId: string | null;
+    hasEnrollmentKey: boolean;
     attempt: {
       id: string;
       isSubmitted: boolean;
@@ -220,6 +251,7 @@ export async function getAvailableTests(
       totalMarks: test.totalMarks,
       enrolled: Boolean(enrollment),
       enrollmentId: enrollment?.id ?? null,
+      hasEnrollmentKey: Boolean(test.enrollmentKey && test.enrollmentKey.trim() !== ""),
       attempt: attempt
         ? {
             id: attempt.id,
@@ -258,11 +290,16 @@ export async function enrollInTest(
 
     const { testId, enrollmentKey } = req.body as ReturnType<typeof enrollSchema.parse>;
 
-  const test = await prisma.test.findUnique({
-    where: { id: testId }
-  });
+    const test = await prisma.test.findUnique({
+      where: { id: testId }
+    });
 
-    if (!test || test.enrollmentKey !== enrollmentKey) {
+    if (!test) {
+      throw new AppError("Test not found", 404);
+    }
+
+    const hasKey = test.enrollmentKey && test.enrollmentKey.trim() !== "";
+    if (hasKey && test.enrollmentKey !== enrollmentKey) {
       throw new AppError("Invalid enrollment key", 400);
     }
 
@@ -359,12 +396,13 @@ export async function beginTest(
       const questions = await prisma.question.findMany({
         where: {
           qbId: rule.qbId,
-          // MongoDB stores null as an absent field; isSet:false matches
-          // not-deleted questions (deletedAt: null would match nothing).
           deletedAt: { isSet: false }
         },
         select: {
           id: true
+        },
+        orderBy: {
+          createdAt: "asc"
         }
       });
 
@@ -375,9 +413,48 @@ export async function beginTest(
         );
       }
 
-      const shuffled = [...questions].sort(() => Math.random() - 0.5);
-      const picked = shuffled.slice(0, rule.questionsToPick);
-      questionIdsToAssign.push(...picked.map((question) => question.id));
+      let availableQuestions = questions;
+      if (rule.uniqueQuestions) {
+        const assignedQuestions = await prisma.attemptQuestion.findMany({
+          where: {
+            attempt: {
+              enrollment: {
+                testId: enrollment.testId
+              }
+            },
+            question: {
+              qbId: rule.qbId
+            }
+          },
+          select: {
+            questionId: true
+          }
+        });
+        const assignedIds = new Set(assignedQuestions.map((aq) => aq.questionId));
+        const unassigned = questions.filter((q) => !assignedIds.has(q.id));
+
+        if (unassigned.length >= rule.questionsToPick) {
+          availableQuestions = unassigned;
+        }
+      }
+
+      let picked: Array<{ id: string }> = [];
+      if (rule.randomQuestions) {
+        const shuffled = [...availableQuestions].sort(() => Math.random() - 0.5);
+        picked = shuffled.slice(0, rule.questionsToPick);
+      } else {
+        picked = availableQuestions.slice(0, rule.questionsToPick);
+      }
+
+      let assigned: Array<{ id: string }> = [];
+      if (rule.randomOrder) {
+        assigned = [...picked].sort(() => Math.random() - 0.5);
+      } else {
+        const indexMap = new Map(questions.map((q, idx) => [q.id, idx]));
+        assigned = [...picked].sort((a, b) => (indexMap.get(a.id) ?? 0) - (indexMap.get(b.id) ?? 0));
+      }
+
+      questionIdsToAssign.push(...assigned.map((question) => question.id));
     }
 
   const createdAttempt = await prisma.$transaction(async (tx) => {

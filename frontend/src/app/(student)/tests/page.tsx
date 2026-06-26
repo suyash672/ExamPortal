@@ -99,6 +99,21 @@ export default function StudentTestsPage() {
     setEnrollModalOpen(true);
   };
 
+  const handleDirectEnroll = async (testId: string) => {
+    try {
+      setEnrollingTestId(testId);
+      setEnrollSubmitting(true);
+      await enrollInTest({ testId, enrollmentKey: "" });
+      showToast("Enrollment successful");
+      await load();
+    } catch (apiError: any) {
+      showToast(getApiErrorMessage(apiError, "Enrollment failed"), "error");
+    } finally {
+      setEnrollSubmitting(false);
+      setEnrollingTestId(null);
+    }
+  };
+
   const submitEnrollment = async () => {
     if (!enrollingTestId) {
       return;
@@ -177,10 +192,17 @@ export default function StudentTestsPage() {
 
                   <button
                     type="button"
-                    onClick={() => openEnrollModal(test.id)}
-                    className="rounded-xl bg-[var(--primary)] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[var(--primary-hover)]"
+                    onClick={() => {
+                      if (test.hasEnrollmentKey) {
+                        openEnrollModal(test.id);
+                      } else {
+                        void handleDirectEnroll(test.id);
+                      }
+                    }}
+                    disabled={enrollingTestId === test.id && enrollSubmitting}
+                    className="rounded-xl bg-[var(--primary)] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[var(--primary-hover)] disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    Enroll
+                    {enrollingTestId === test.id && enrollSubmitting ? "Enrolling..." : "Enroll"}
                   </button>
                 </div>
               </article>

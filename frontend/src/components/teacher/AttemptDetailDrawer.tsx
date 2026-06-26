@@ -92,6 +92,11 @@ export function AttemptDetailDrawer({
 
                 {attempt.questions.map((item, index) => {
                   const selected = new Set(item.studentAnswer?.selectedOptionIds ?? []);
+                  const isAttempted = !!(item.studentAnswer && (
+                    item.question.type === "MCQ"
+                      ? (item.studentAnswer.selectedOptionIds && item.studentAnswer.selectedOptionIds.length > 0)
+                      : (item.studentAnswer.textAnswer && item.studentAnswer.textAnswer.trim() !== "")
+                  ));
 
                   return (
                     <article key={item.attemptQuestionId} className="rounded-2xl border border-slate-200 bg-white p-4">
@@ -104,11 +109,16 @@ export function AttemptDetailDrawer({
                         </div>
 
                         <div className="flex items-center gap-2">
+                          {!isAttempted && (
+                            <span className="inline-flex rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-800">
+                              Not Attempted
+                            </span>
+                          )}
                           <span className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-700">
                             {item.question.type}
                           </span>
                           <span className="inline-flex rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700">
-                            {formatMarks(item.marksAwarded)} / {formatMarks(item.maxMarks)}
+                            {isAttempted ? `${formatMarks(item.marksAwarded)} / ${formatMarks(item.maxMarks)}` : `0 / ${formatMarks(item.maxMarks)}`}
                           </span>
                         </div>
                       </div>
@@ -117,10 +127,11 @@ export function AttemptDetailDrawer({
                         <div className="mt-3 space-y-2">
                           {item.question.mcqOptions.map((option) => {
                             const isSelected = selected.has(option.id);
-                            const optionClass = option.isCorrect
+                            const isCorrect = option.isCorrect;
+                            const optionClass = isCorrect
                               ? "border-emerald-200 bg-emerald-50 text-emerald-900"
                               : isSelected
-                              ? "border-sky-200 bg-sky-50 text-sky-900"
+                              ? "border-rose-200 bg-rose-50 text-rose-900"
                               : "border-slate-200 bg-slate-50 text-slate-700";
 
                             return (
@@ -131,13 +142,13 @@ export function AttemptDetailDrawer({
                                 <div className="flex items-center justify-between gap-2">
                                   <span>{option.optionText}</span>
                                   <div className="flex items-center gap-1">
-                                    {option.isCorrect ? (
+                                    {isCorrect ? (
                                       <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-800">
                                         Correct
                                       </span>
                                     ) : null}
                                     {isSelected ? (
-                                      <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[11px] font-semibold text-sky-800">
+                                      <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${isCorrect ? "bg-sky-100 text-sky-800" : "bg-rose-100 text-rose-800"}`}>
                                         Selected
                                       </span>
                                     ) : null}

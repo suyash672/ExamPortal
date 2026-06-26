@@ -230,30 +230,65 @@ export async function getAttemptDetail(
         name: attempt.enrollment.student.name,
         email: attempt.enrollment.student.email
       },
-      questions: attempt.questions.map((item) => ({
-        attemptQuestionId: item.id,
-        question: {
-          id: item.question.id,
-          text: item.question.questionText,
-          type: item.question.type,
-          mcqOptions: item.question.mcqOptions.map((option) => ({
-            id: option.id,
-            optionText: option.optionText,
-            isCorrect: option.scorePercent === 100
-          })),
-          acceptedAnswers: item.question.acceptedAnswers.map((answer) => answer.answerText)
-        },
-        studentAnswer: item.answer
-          ? {
-              textAnswer: item.answer.textAnswer,
-              selectedOptionIds: item.answer.selectedOptions.map(
-                (selection) => selection.mcqOptionId
-              )
+      questions: attempt.questions.map((item) => {
+        const maxMarks = marksByQbId.get(item.question.qbId) ?? null;
+
+        let marksAwarded = null;
+        if (item.answer) {
+          if (item.answer.marksAwarded !== null) {
+            marksAwarded = item.answer.marksAwarded;
+          } else {
+            // Fallback calculation for legacy records
+            const maxMarksVal = maxMarks ?? 0;
+            if (item.question.type === "TEXT") {
+              const normalized = (item.answer.textAnswer ?? "").trim().toLowerCase();
+              const accepted = new Set(item.question.acceptedAnswers.map(a => a.answerText.trim().toLowerCase()));
+              marksAwarded = accepted.has(normalized) ? maxMarksVal : 0;
+            } else {
+              const selectedIds = item.answer.selectedOptions.map(o => o.mcqOptionId);
+              const options = item.question.mcqOptions;
+              const hasZero = selectedIds.some(id => {
+                const opt = options.find(o => o.id === id);
+                return !opt || opt.scorePercent === 0;
+              });
+              if (hasZero || selectedIds.length === 0) {
+                marksAwarded = 0;
+              } else {
+                const totalPercent = selectedIds.reduce((sum, id) => {
+                  const opt = options.find(o => o.id === id);
+                  return sum + (opt?.scorePercent ?? 0);
+                }, 0);
+                marksAwarded = Math.floor((totalPercent / 100) * maxMarksVal);
+              }
             }
-          : null,
-        marksAwarded: item.answer?.marksAwarded ?? null,
-        maxMarks: marksByQbId.get(item.question.qbId) ?? null
-      }))
+          }
+        }
+
+        return {
+          attemptQuestionId: item.id,
+          question: {
+            id: item.question.id,
+            text: item.question.questionText,
+            type: item.question.type,
+            mcqOptions: item.question.mcqOptions.map((option) => ({
+              id: option.id,
+              optionText: option.optionText,
+              isCorrect: option.scorePercent === 100
+            })),
+            acceptedAnswers: item.question.acceptedAnswers.map((answer) => answer.answerText)
+          },
+          studentAnswer: item.answer
+            ? {
+                textAnswer: item.answer.textAnswer,
+                selectedOptionIds: item.answer.selectedOptions.map(
+                  (selection) => selection.mcqOptionId
+                )
+              }
+            : null,
+          marksAwarded,
+          maxMarks
+        };
+      })
     });
   } catch (error) {
     next(error);

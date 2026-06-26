@@ -3,13 +3,17 @@ import { z } from "zod";
 export const testQbRuleSchema = z.object({
   qbId: z.string().regex(/^[a-fA-F0-9]{24}$/),
   questionsToPick: z.number().int().min(1),
-  marksPerQuestion: z.number().int().min(1)
+  marksPerQuestion: z.number().int().min(1),
+  randomQuestions: z.boolean().default(true),
+  randomOrder: z.boolean().default(true),
+  uniqueQuestions: z.boolean().default(false),
+  shuffleOptions: z.boolean().default(false)
 });
 
 export const createTestSchema = z
   .object({
     title: z.string().trim().min(1).max(200),
-    enrollmentKey: z.string().min(4).max(50).regex(/^\S+$/),
+    enrollmentKey: z.string().min(4).max(50).regex(/^\S+$/).optional().or(z.literal("")).or(z.null()),
     startTime: z.coerce.date(),
     endTime: z.coerce.date(),
     durationMinutes: z.number().int().min(1),

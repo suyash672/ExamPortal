@@ -1,7 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useFieldArray, useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 import {
@@ -65,8 +65,13 @@ type QuestionFormModalProps = {
   open: boolean;
   qbId: string;
   onOpenChange: (open: boolean) => void;
-  onSaved: () => Promise<void> | void;
+  onApply: (values: any, questionId?: string) => void;
   question?: QuestionRecord | null;
+  onPrevious?: () => void;
+  onNext?: () => void;
+  hasPrevious?: boolean;
+  hasNext?: boolean;
+  questionNumber?: number;
 };
 
 function normalizeQuestion(
@@ -187,7 +192,18 @@ function ScorePreview({
   );
 }
 
-export function QuestionFormModal({ open, qbId, onOpenChange, onSaved, question }: QuestionFormModalProps) {
+export function QuestionFormModal({
+  open,
+  qbId,
+  onOpenChange,
+  onApply,
+  question,
+  onPrevious,
+  onNext,
+  hasPrevious,
+  hasNext,
+  questionNumber
+}: QuestionFormModalProps) {
   const { showToast } = useToast();
   const isEdit = Boolean(question);
 
@@ -198,6 +214,8 @@ export function QuestionFormModal({ open, qbId, onOpenChange, onSaved, question 
     reset,
     clearErrors,
     setError,
+    setValue,
+    getValues,
     formState: { errors, isSubmitting }
   } = useForm<QuestionFormValues>({
     resolver: zodResolver(questionFormSchema),
@@ -248,7 +266,8 @@ export function QuestionFormModal({ open, qbId, onOpenChange, onSaved, question 
     clearErrors();
   }, [clearErrors, mcqStatus?.message, setError, type]);
 
-  const onSubmit = async (values: QuestionFormValues) => {
+  const onSubmit = async (values: QuestionFormValues, eventOrClose?: any) => {
+    const closeAfterSave = typeof eventOrClose === "boolean" ? eventOrClose : true;
     try {
       if (values.type === "MCQ") {
         const status = getMcqStatus(values.options);
@@ -259,18 +278,69 @@ export function QuestionFormModal({ open, qbId, onOpenChange, onSaved, question 
         }
       }
 
-      if (question) {
-        await updateQuestion(question.id, values);
-        showToast("Question updated");
-      } else {
-        await createQuestion(values);
-        showToast("Question created");
+      onApply(values, question?.id);
+      
+      if (closeAfterSave) {
+        reset(values); // reset so it's no longer dirty
+        onOpenChange(false);
       }
-
-      await onSaved();
-      onOpenChange(false);
     } catch {
-      setError("root", { message: "Unable to save question. Please try again." });
+      setError("root", { message: "Unable to apply changes." });
+    }
+  };
+
+  const checkIsDirty = () => {
+    const current = getValues();
+    const initial = normalizeQuestion(question, qbId);
+    
+    const cleanObject = (val: any) => {
+      if (!val) return {};
+      return {
+        type: val.type,
+        questionText: (val.questionText || "").trim(),
+        options: val.type === "MCQ" ? (val.options || []).map((o: any) => ({
+          optionText: (o?.optionText || "").trim(),
+          scorePercent: Number(o?.scorePercent || 0)
+        })) : [],
+        acceptedAnswers: val.type === "TEXT" ? (val.acceptedAnswers || []).map((a: string) => (a || "").trim().toLowerCase()) : []
+      };
+    };
+    
+    return JSON.stringify(cleanObject(current)) !== JSON.stringify(cleanObject(initial));
+  };
+
+  const handleNavigate = async (direction: "next" | "prev") => {
+    if (checkIsDirty()) {
+      await handleSubmit(
+        async (values) => {
+          await onSubmit(values, false);
+          reset(values);
+          if (direction === "next" && onNext) onNext();
+          if (direction === "prev" && onPrevious) onPrevious();
+        },
+        () => {
+          if (direction === "next" && onNext) onNext();
+          if (direction === "prev" && onPrevious) onPrevious();
+        }
+      )();
+    } else {
+      if (direction === "next" && onNext) onNext();
+      if (direction === "prev" && onPrevious) onPrevious();
+    }
+  };
+
+  const handleClose = () => {
+    if (checkIsDirty()) {
+      handleSubmit(
+        async (values) => {
+          await onSubmit(values, true);
+        },
+        () => {
+          onOpenChange(false);
+        }
+      )();
+    } else {
+      onOpenChange(false);
     }
   };
 
@@ -279,20 +349,48 @@ export function QuestionFormModal({ open, qbId, onOpenChange, onSaved, question 
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 px-4 py-6 backdrop-blur-sm">
-      <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl">
+    <div 
+      onClick={handleClose}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 px-4 py-6 backdrop-blur-sm"
+    >
+        <div 
+          onClick={(e) => e.stopPropagation()}
+          className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl"
+        >
         <div className="mb-5 flex items-start justify-between gap-4">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--primary)]">
               {isEdit ? "Edit question" : "New question"}
             </p>
-            <h2 className="mt-1 text-xl font-semibold text-slate-900">
-              {isEdit ? "Update question" : "Create a question"}
-            </h2>
+            <div className="flex items-center gap-4">
+              <h2 className="mt-1 text-xl font-semibold text-slate-900">
+                {isEdit ? `Update question ${questionNumber ? `#${questionNumber}` : ""}` : "Create a question"}
+              </h2>
+              {isEdit && onPrevious && onNext && (
+                <div className="mt-1 flex items-center gap-1 rounded-xl bg-slate-50 p-1">
+                  <button
+                    type="button"
+                    onClick={() => handleNavigate("prev")}
+                    disabled={!hasPrevious || isSubmitting}
+                    className="rounded-lg px-2 py-1 text-sm font-medium text-slate-600 hover:bg-white hover:text-slate-900 disabled:opacity-30 disabled:hover:bg-transparent"
+                  >
+                    &lt; Prev
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleNavigate("next")}
+                    disabled={!hasNext || isSubmitting}
+                    className="rounded-lg px-2 py-1 text-sm font-medium text-slate-600 hover:bg-white hover:text-slate-900 disabled:opacity-30 disabled:hover:bg-transparent"
+                  >
+                    Next &gt;
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
           <button
             type="button"
-            onClick={() => onOpenChange(false)}
+            onClick={handleClose}
             className="rounded-full p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
             aria-label="Close question modal"
           >
@@ -390,7 +488,28 @@ export function QuestionFormModal({ open, qbId, onOpenChange, onSaved, question 
                       ) : null}
                     </div>
 
-                    <div className="flex items-start pt-6">
+                    <div className="flex flex-col gap-2 pt-6">
+                      <label className="flex items-center gap-2 text-sm text-slate-700">
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 rounded border-slate-300 text-[var(--primary)] focus:ring-[var(--primary)]"
+                          checked={optionValues[index]?.scorePercent === 100}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              optionValues.forEach((_, i) => {
+                                setValue(`options.${i}.scorePercent`, i === index ? 100 : 0, {
+                                  shouldValidate: true
+                                });
+                              });
+                            } else {
+                              setValue(`options.${index}.scorePercent`, 0, {
+                                shouldValidate: true
+                              });
+                            }
+                          }}
+                        />
+                        <span className="text-xs font-medium uppercase tracking-[0.1em]">Set Correct</span>
+                      </label>
                       <button
                         type="button"
                         onClick={() => optionArray.remove(index)}
@@ -475,20 +594,18 @@ export function QuestionFormModal({ open, qbId, onOpenChange, onSaved, question 
           <div className="flex items-center justify-end gap-3 pt-2">
             <button
               type="button"
-              onClick={() => onOpenChange(false)}
-              className="rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+              onClick={handleClose}
+              className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
             >
               Cancel
             </button>
             <button
-              type="submit"
-              disabled={isSubmitting || (type === "MCQ" && Boolean(mcqStatus?.message))}
-              className="inline-flex items-center justify-center gap-2 rounded-xl bg-[var(--primary)] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[var(--primary-hover)] disabled:cursor-not-allowed disabled:opacity-60"
+              type="button"
+              onClick={handleSubmit((v) => onSubmit(v, true))}
+              disabled={isSubmitting}
+              className="rounded-xl bg-[var(--primary)] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[var(--primary-hover)] disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {isSubmitting ? (
-                <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />
-              ) : null}
-              {isSubmitting ? "Saving..." : isEdit ? "Update question" : "Create question"}
+              {isSubmitting ? "Applying..." : isEdit ? "Update question" : "Create question"}
             </button>
           </div>
         </form>

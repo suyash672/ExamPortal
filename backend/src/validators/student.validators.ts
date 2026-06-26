@@ -2,7 +2,7 @@ import { z } from "zod";
 
 export const enrollSchema = z.object({
   testId: z.string().regex(/^[a-fA-F0-9]{24}$/),
-  enrollmentKey: z.string().min(1)
+  enrollmentKey: z.string().optional().or(z.literal("")).or(z.null())
 });
 
 export const beginTestSchema = z.object({

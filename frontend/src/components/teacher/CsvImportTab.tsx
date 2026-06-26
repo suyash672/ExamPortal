@@ -2,18 +2,19 @@
 
 import { useMemo, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
-import { importQuestionsCsv, type CsvImportError } from "@/lib/api/questions";
+import { importQuestionsCsv, importQuestionsMoodleHtml, type CsvImportError } from "@/lib/api/questions";
 import { useToast } from "@/components/ui/ToastProvider";
 
 type CsvImportTabProps = {
   qbId: string;
+  onImported?: () => void;
 };
 
 const sampleCsv = `type,question_text,option_1_text,option_1_score,option_2_text,option_2_score,option_3_text,option_3_score,option_4_text,option_4_score,option_5_text,option_5_score,option_6_text,option_6_score,accepted_answer_1,accepted_answer_2,accepted_answer_3,accepted_answer_4,accepted_answer_5
 MCQ,Which planet is known as the Red Planet?,Mars,100,Earth,0,,,,,,,,,,,
 TEXT,Name the capital city of France.,,,,,,,,,,,,,,Paris,PARIS,,`;
 
-export function CsvImportTab({ qbId }: CsvImportTabProps) {
+export function CsvImportTab({ qbId, onImported }: CsvImportTabProps) {
   const { showToast } = useToast();
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [file, setFile] = useState<File | null>(null);
@@ -57,19 +58,35 @@ export function CsvImportTab({ qbId }: CsvImportTabProps) {
     setImportedCount(null);
 
     try {
-      const response = await importQuestionsCsv(formData);
-      setImportedCount(response.imported);
-      showToast(`Imported ${response.imported} questions`);
+      if (file.name.toLowerCase().endsWith(".html")) {
+        const response = await importQuestionsMoodleHtml(formData);
+        setImportedCount(response.imported);
+        if (response.warnings && response.warnings.length > 0) {
+          showToast(`Imported ${response.imported} questions with ${response.warnings.length} warnings. First option is set to 100% by default.`, "error");
+        } else {
+          showToast(`Imported ${response.imported} questions. First option is set to 100% by default.`);
+        }
+      } else {
+        const response = await importQuestionsCsv(formData);
+        setImportedCount(response.imported);
+        showToast(`Imported ${response.imported} questions`);
+      }
+      
+      
       setFile(null);
       if (inputRef.current) {
         inputRef.current.value = "";
+      }
+      
+      if (onImported) {
+        onImported();
       }
     } catch (error: any) {
       const responseErrors = error?.response?.data?.errors;
       if (Array.isArray(responseErrors)) {
         setErrors(responseErrors);
       } else {
-        showToast("Failed to import CSV", "error");
+        showToast("Failed to import file", "error");
       }
     } finally {
       setLoading(false);
@@ -80,9 +97,9 @@ export function CsvImportTab({ qbId }: CsvImportTabProps) {
     <div className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <h3 className="text-lg font-semibold text-slate-900">Import questions from CSV</h3>
+          <h3 className="text-lg font-semibold text-slate-900">Import questions from CSV or Moodle HTML</h3>
           <p className="mt-1 text-sm text-slate-500">
-            Upload a CSV file to validate and import questions in one pass.
+            Upload a CSV file or a Moodle XHTML Export file to import questions.
           </p>
         </div>
         <button
@@ -97,13 +114,13 @@ export function CsvImportTab({ qbId }: CsvImportTabProps) {
       <div className="grid gap-3 md:grid-cols-[1fr_auto] md:items-end">
         <div className="space-y-1.5">
           <label className="text-sm font-medium text-slate-700" htmlFor="csv-file">
-            CSV file
+            Import file
           </label>
           <input
             ref={inputRef}
             id="csv-file"
             type="file"
-            accept=".csv,text/csv"
+            accept=".csv,text/csv,.html,text/html"
             onChange={handleFileChange}
             className="block w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-700 file:mr-4 file:rounded-lg file:border-0 file:bg-slate-900 file:px-4 file:py-2 file:text-sm file:font-medium file:text-white hover:file:bg-slate-800"
           />

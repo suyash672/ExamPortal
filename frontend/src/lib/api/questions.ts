@@ -73,3 +73,28 @@ export async function importQuestionsCsv(formData: FormData): Promise<{ imported
 
   return response.data;
 }
+
+export async function importQuestionsMoodleHtml(formData: FormData): Promise<{ imported: number, warnings: string[] }> {
+  const response = await api.post<{ imported: number, warnings: string[] }>("/api/questions/import-moodle-html", formData, {
+    headers: {
+      "Content-Type": "multipart/form-data"
+    }
+  });
+
+  return response.data;
+}
+
+export async function deduplicateQuestions(qbId: string): Promise<{ deleted: number }> {
+  const response = await api.post<{ deleted: number }>("/api/questions/deduplicate", { qbId });
+  return response.data;
+}
+
+export type BulkSavePayload = {
+  creates: QuestionPayload[];
+  updates: Array<QuestionPayload & { id: string }>;
+  deletes: string[];
+};
+
+export async function bulkSaveQuestions(qbId: string, payload: BulkSavePayload): Promise<void> {
+  await api.post(`/api/banks/${qbId}/questions/bulk`, payload);
+}

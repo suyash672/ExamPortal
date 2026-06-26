@@ -21,7 +21,7 @@ export async function createTest(
     const { title, enrollmentKey, startTime, endTime, durationMinutes, qbRules } =
       req.body as {
         title: string;
-        enrollmentKey: string;
+        enrollmentKey?: string | null;
         startTime: Date;
         endTime: Date;
         durationMinutes: number;
@@ -29,6 +29,10 @@ export async function createTest(
           qbId: string;
           questionsToPick: number;
           marksPerQuestion: number;
+          randomQuestions?: boolean;
+          randomOrder?: boolean;
+          uniqueQuestions?: boolean;
+          shuffleOptions?: boolean;
         }>;
       };
 
@@ -102,7 +106,7 @@ export async function createTest(
         data: {
           teacherId: req.user!.id,
           title,
-          enrollmentKey,
+          enrollmentKey: enrollmentKey || null,
           startTime,
           endTime,
           durationMinutes,
@@ -115,7 +119,11 @@ export async function createTest(
           testId: test.id,
           qbId: rule.qbId,
           questionsToPick: rule.questionsToPick,
-          marksPerQuestion: rule.marksPerQuestion
+          marksPerQuestion: rule.marksPerQuestion,
+          randomQuestions: rule.randomQuestions ?? true,
+          randomOrder: rule.randomOrder ?? true,
+          uniqueQuestions: rule.uniqueQuestions ?? false,
+          shuffleOptions: rule.shuffleOptions ?? false
         }))
       });
 
