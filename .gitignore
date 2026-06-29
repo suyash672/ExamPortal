@@ -13,3 +13,7 @@ frontend/.next/
 backend/node_modules/.prisma/
 backend/node_modules/@prisma/client/
 backend/prisma/generated/
+
+# Sample questions
+samplequestions/
+

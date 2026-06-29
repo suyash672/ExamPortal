@@ -61,6 +61,10 @@ export type AttemptPayload = {
   score: number | null;
   totalMarks: number;
   timeRemainingSeconds: number;
+  useFullscreen?: boolean;
+  logActivities?: boolean;
+  preventCopyPaste?: boolean;
+  isBlocked?: boolean;
   attemptQuestions: BeginTestQuestion[];
 };
 
@@ -108,4 +112,11 @@ export async function submitAttempt(
 ): Promise<SubmitAttemptResponse> {
   const response = await api.post<SubmitAttemptResponse>("/api/student/submit", payload);
   return response.data;
+}
+
+export async function logAttemptActivity(
+  attemptId: string,
+  payload: { type: string; message: string }
+): Promise<void> {
+  await api.post(`/api/student/attempt/${attemptId}/activity`, payload);
 }

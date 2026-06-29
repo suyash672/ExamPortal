@@ -2,9 +2,11 @@ import { z } from "zod";
 
 export const createQbSchema = z.object({
   name: z.string().trim().min(1).max(100),
-  moduleId: z.string().regex(/^[a-fA-F0-9]{24}$/)
+  moduleId: z.string().regex(/^[a-fA-F0-9]{24}$/),
+  type: z.string().trim().min(1).max(50).optional()
 });
 
 export const updateQbSchema = z.object({
-  name: z.string().trim().min(1).max(100)
+  name: z.string().trim().min(1).max(100).optional(),
+  type: z.string().trim().min(1).max(50).optional()
 });

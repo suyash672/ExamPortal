@@ -80,6 +80,7 @@ model QuestionBank {
   moduleId    String       @db.ObjectId
   module      Module       @relation(fields: [moduleId], references: [id])
   name        String
+  type        String       @default("easy")
   createdAt   DateTime     @default(now())
   questions   Question[]
   testQbRules TestQbRule[]
@@ -133,6 +134,11 @@ model Test {
   createdAt       DateTime     @default(now())
   testQbRules     TestQbRule[]
   enrollments     Enrollment[]
+
+  // Proctoring configuration settings
+  useFullscreen   Boolean      @default(false)
+  logActivities   Boolean      @default(false)
+  preventCopyPaste Boolean     @default(false)
 }
 
 model TestQbRule {
@@ -169,7 +175,11 @@ model Attempt {
   submittedAt  DateTime?
   isSubmitted  Boolean           @default(false)
   score        Int?
+  isBlocked    Boolean           @default(false)
   questions    AttemptQuestion[]
+
+  // Embedded activity logs
+  activities   AttemptActivity[]
 }
 
 model AttemptQuestion {
@@ -196,4 +206,10 @@ model AttemptAnswerOption {
   attemptAnswer   AttemptAnswer @relation(fields: [attemptAnswerId], references: [id])
   mcqOptionId     String        @db.ObjectId
   mcqOption       McqOption     @relation(fields: [mcqOptionId], references: [id])
+}
+
+type AttemptActivity {
+  type      String
+  message   String
+  timestamp DateTime
 }

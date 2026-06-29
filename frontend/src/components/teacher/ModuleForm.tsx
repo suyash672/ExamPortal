@@ -28,6 +28,8 @@ type ModuleFormProps = {
 export function ModuleForm({ subjectId, module, onSaved, onCancel }: ModuleFormProps) {
   const { showToast } = useToast();
   const [newQbName, setNewQbName] = useState("");
+  const [newQbType, setNewQbType] = useState("easy");
+  const [newQbCustomType, setNewQbCustomType] = useState("");
   const [isAddingQb, setIsAddingQb] = useState(false);
   const [qbError, setQbError] = useState<string | null>(null);
 
@@ -79,13 +81,20 @@ export function ModuleForm({ subjectId, module, onSaved, onCancel }: ModuleFormP
       setQbError("Question bank name is required");
       return;
     }
+    const typeToSave = newQbType === "custom" ? newQbCustomType.trim() : newQbType;
+    if (!typeToSave) {
+      setQbError("Question bank type is required");
+      return;
+    }
     
     try {
       setIsAddingQb(true);
       setQbError(null);
-      await createQuestionBank(module.id, { name: trimmed });
+      await createQuestionBank(module.id, { name: trimmed, type: typeToSave });
       showToast("Question bank added");
       setNewQbName("");
+      setNewQbType("easy");
+      setNewQbCustomType("");
       await onSaved(); 
     } catch (e) {
       setQbError("Failed to create question bank");
@@ -163,8 +172,8 @@ export function ModuleForm({ subjectId, module, onSaved, onCancel }: ModuleFormP
       {module ? (
         <div className="mt-6 border-t border-slate-200 pt-5">
           <h4 className="text-sm font-semibold text-slate-900 mb-3">Quick Add Question Bank</h4>
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
-            <div className="flex-1 space-y-1.5">
+          <div className="space-y-3">
+            <div className="grid gap-3 sm:grid-cols-2">
               <input
                 type="text"
                 placeholder="Question bank name..."
@@ -172,18 +181,42 @@ export function ModuleForm({ subjectId, module, onSaved, onCancel }: ModuleFormP
                 onChange={(e) => setNewQbName(e.target.value)}
                 className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 transition focus:border-[var(--ring)] focus:ring-2 focus:ring-[var(--ring)]/30"
               />
-              {qbError ? (
-                <p className="text-xs text-[var(--danger)]">{qbError}</p>
-              ) : null}
+              <select
+                value={newQbType}
+                onChange={(e) => setNewQbType(e.target.value)}
+                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 transition focus:border-[var(--ring)] focus:ring-2 focus:ring-[var(--ring)]/30"
+              >
+                <option value="easy">Easy</option>
+                <option value="medium">Medium</option>
+                <option value="complex">Complex</option>
+                <option value="custom">Custom...</option>
+              </select>
             </div>
-            <button
-              type="button"
-              onClick={() => void handleAddQb()}
-              disabled={isAddingQb}
-              className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {isAddingQb ? "Adding..." : "Add"}
-            </button>
+
+            {newQbType === "custom" ? (
+              <input
+                type="text"
+                placeholder="Custom type name..."
+                value={newQbCustomType}
+                onChange={(e) => setNewQbCustomType(e.target.value)}
+                className="w-full max-w-sm rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 transition focus:border-[var(--ring)] focus:ring-2 focus:ring-[var(--ring)]/30"
+              />
+            ) : null}
+
+            {qbError ? (
+              <p className="text-xs text-[var(--danger)]">{qbError}</p>
+            ) : null}
+
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={() => void handleAddQb()}
+                disabled={isAddingQb}
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isAddingQb ? "Adding..." : "Add"}
+              </button>
+            </div>
           </div>
         </div>
       ) : null}

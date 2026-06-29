@@ -4,6 +4,7 @@ export type QuestionBankRecord = {
   id: string;
   moduleId: string;
   name: string;
+  type: string;
   createdAt: string;
   _count?: {
     questions: number;
@@ -11,7 +12,8 @@ export type QuestionBankRecord = {
 };
 
 export type QuestionBankPayload = {
-  name: string;
+  name?: string;
+  type?: string;
 };
 
 export async function getQuestionBanks(moduleId: string): Promise<QuestionBankRecord[]> {

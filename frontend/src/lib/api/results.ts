@@ -3,10 +3,17 @@ import api from "../axios";
 export type TestResultItem = {
   studentName: string;
   studentEmail: string;
-  score: number;
+  score: number | null;
   totalMarks: number;
+  isSubmitted: boolean;
+  isBlocked: boolean;
   submittedAt: string | null;
   attemptId: string;
+  activities?: Array<{
+    type: string;
+    message: string;
+    timestamp: string;
+  }>;
 };
 
 export type AttemptDetail = {
@@ -15,6 +22,7 @@ export type AttemptDetail = {
   testTitle: string;
   enrollmentId: string;
   isSubmitted: boolean;
+  isBlocked: boolean;
   startedAt: string;
   submittedAt: string | null;
   score: number | null;
@@ -24,6 +32,11 @@ export type AttemptDetail = {
     name: string;
     email: string;
   };
+  activities?: Array<{
+    type: string;
+    message: string;
+    timestamp: string;
+  }>;
   questions: Array<{
     attemptQuestionId: string;
     question: {
@@ -74,4 +87,12 @@ export async function downloadResultsCsv(testId: string): Promise<void> {
   link.click();
   link.remove();
   window.URL.revokeObjectURL(url);
+}
+
+export async function blockStudentAttempt(
+  testId: string,
+  attemptId: string,
+  isBlocked: boolean
+): Promise<void> {
+  await api.post(`/api/tests/${testId}/attempts/${attemptId}/block`, { isBlocked });
 }

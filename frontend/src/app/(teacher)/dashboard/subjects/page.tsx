@@ -62,8 +62,9 @@ export default function SubjectsPage() {
       showToast("Subject deleted");
       setPendingDelete(null);
       await loadSubjects();
-    } catch {
-      showToast("Failed to delete subject", "error");
+    } catch (err: any) {
+      const message = err?.response?.data?.message || "Failed to delete subject";
+      showToast(message, "error");
     } finally {
       setDeletingId(null);
     }

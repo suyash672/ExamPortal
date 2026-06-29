@@ -70,6 +70,10 @@ function serializeAttempt(attempt: any, now: Date) {
     score: attempt.score,
     totalMarks: attempt.enrollment.test.totalMarks,
     timeRemainingSeconds,
+    useFullscreen: attempt.enrollment.test.useFullscreen ?? false,
+    logActivities: attempt.enrollment.test.logActivities ?? false,
+    preventCopyPaste: attempt.enrollment.test.preventCopyPaste ?? false,
+    isBlocked: attempt.isBlocked ?? false,
     attemptQuestions: attempt.questions.map((item: any) => {
       const rule = rules.find((r: any) => r.qbId === item.question.qbId);
       const shuffleOptions = rule?.shuffleOptions ?? false;
@@ -708,6 +712,59 @@ export async function submitAttempt(
       score: result,
       totalMarks: attempt.enrollment.test.totalMarks
     });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function logActivity(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    if (!req.user) {
+      throw new AppError("Unauthorized", 401);
+    }
+
+    const attemptId = req.params.attemptId as string;
+    const { type, message } = req.body as { type: string; message: string };
+
+    if (!type || !message) {
+      throw new AppError("type and message are required", 400);
+    }
+
+    const attempt = await prisma.attempt.findFirst({
+      where: {
+        id: attemptId,
+        enrollment: {
+          studentId: req.user.id
+        }
+      }
+    });
+
+    if (!attempt) {
+      throw new AppError("Attempt not found", 404);
+    }
+
+    if (attempt.isSubmitted) {
+      throw new AppError("Attempt already submitted", 400);
+    }
+
+    await prisma.attempt.update({
+      where: { id: attemptId },
+      data: {
+        activities: {
+          push: {
+            type,
+            message,
+            timestamp: new Date()
+          }
+        }
+      }
+    });
+
+    res.status(200).json({ success: true });
   } catch (error) {
     next(error);
   }

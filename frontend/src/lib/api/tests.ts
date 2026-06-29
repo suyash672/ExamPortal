@@ -14,6 +14,9 @@ export type TestListItem = {
   isLocked: boolean;
   createdAt: string;
   enrollmentCount: number;
+  useFullscreen?: boolean;
+  logActivities?: boolean;
+  preventCopyPaste?: boolean;
 };
 
 export type TestQbRulePayload = {
@@ -33,6 +36,9 @@ export type CreateTestPayload = {
   endTime: string;
   durationMinutes: number;
   qbRules: TestQbRulePayload[];
+  useFullscreen?: boolean;
+  logActivities?: boolean;
+  preventCopyPaste?: boolean;
 };
 
 export type CreatedTest = {
@@ -46,6 +52,9 @@ export type CreatedTest = {
   totalMarks: number;
   isLocked: boolean;
   createdAt: string;
+  useFullscreen?: boolean;
+  logActivities?: boolean;
+  preventCopyPaste?: boolean;
   testQbRules: Array<{
     id: string;
     testId: string;

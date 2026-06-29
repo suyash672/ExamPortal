@@ -10,7 +10,7 @@ import { getQuestionBanks, type QuestionBankRecord } from "@/lib/api/questionban
 import { getSubjects, type SubjectRecord } from "@/lib/api/subjects";
 import { createTest } from "@/lib/api/tests";
 
-type StepId = 1 | 2 | 3;
+type StepId = 1 | 2 | 3 | 4;
 
 type TreeNode = {
   subject: SubjectRecord;
@@ -76,13 +76,14 @@ function formatDateTime(value: string): string {
 function StepIndicator({ step }: { step: StepId }) {
   const items = [
     { id: 1 as const, label: "Basic Info" },
-    { id: 2 as const, label: "Question Banks" },
-    { id: 3 as const, label: "Review" }
+    { id: 2 as const, label: "Test Settings" },
+    { id: 3 as const, label: "Question Banks" },
+    { id: 4 as const, label: "Review" }
   ];
 
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-4">
-      <ol className="grid gap-3 sm:grid-cols-3">
+      <ol className="grid gap-3 sm:grid-cols-4">
         {items.map((item) => {
           const active = step === item.id;
           const complete = step > item.id;
@@ -122,6 +123,11 @@ export default function CreateTestPage() {
   const [endTimeInput, setEndTimeInput] = useState("");
   const [durationMinutesInput, setDurationMinutesInput] = useState("60");
   const [minDateTime, setMinDateTime] = useState("");
+  
+  // Proctoring Settings States
+  const [useFullscreen, setUseFullscreen] = useState(false);
+  const [logActivities, setLogActivities] = useState(false);
+  const [preventCopyPaste, setPreventCopyPaste] = useState(false);
 
   const [globalRulesEnabled, setGlobalRulesEnabled] = useState(false);
   const [globalRules, setGlobalRules] = useState({
@@ -152,14 +158,35 @@ export default function CreateTestPage() {
 
   const [selectedRules, setSelectedRules] = useState<Record<string, SelectedRule>>({});
 
-  const basicValidation = useMemo<BasicValidation>(() => {
-    const errors: BasicValidation = {};
+  const step1Validation = useMemo<Record<string, string>>(() => {
+    const errors: Record<string, string> = {};
 
     if (!title.trim()) {
       errors.title = "Title is required.";
     } else if (title.trim().length > 200) {
       errors.title = "Title must be at most 200 characters.";
     }
+
+    const startDate = parseLocalDateTime(startTimeInput);
+    const endDate = parseLocalDateTime(endTimeInput);
+
+    if (!startDate) {
+      errors.startTime = "Start time is required.";
+    }
+    if (!endDate) {
+      errors.endTime = "End time is required.";
+    }
+    if (startDate && endDate && endDate <= startDate) {
+      errors.endTime = "End time must be after start time.";
+    }
+
+    return errors;
+  }, [endTimeInput, startTimeInput, title]);
+
+  const step1Valid = useMemo(() => Object.keys(step1Validation).length === 0, [step1Validation]);
+
+  const step2Validation = useMemo<Record<string, string>>(() => {
+    const errors: Record<string, string> = {};
 
     if (requireEnrollmentKey) {
       if (!enrollmentKey.trim()) {
@@ -171,36 +198,31 @@ export default function CreateTestPage() {
       }
     }
 
-    const startDate = parseLocalDateTime(startTimeInput);
-    const endDate = parseLocalDateTime(endTimeInput);
     const duration = toPositiveInteger(durationMinutesInput);
-
-    if (!startDate) {
-      errors.startTime = "Start time is required.";
-    }
-
-    if (!endDate) {
-      errors.endTime = "End time is required.";
-    }
-
     if (!duration) {
       errors.durationMinutes = "Duration must be a positive integer.";
     }
 
-    if (startDate && endDate) {
-      if (endDate <= startDate) {
-        errors.endTime = "End time must be after start time.";
-      }
+    const startDate = parseLocalDateTime(startTimeInput);
+    const endDate = parseLocalDateTime(endTimeInput);
 
+    if (startDate && endDate && duration) {
       const gapMinutes = Math.floor((endDate.getTime() - startDate.getTime()) / 60000);
-
-      if (duration && duration > gapMinutes) {
+      if (duration > gapMinutes) {
         errors.durationMinutes = `Duration must be at most ${gapMinutes} minutes.`;
       }
     }
 
     return errors;
-  }, [durationMinutesInput, enrollmentKey, endTimeInput, startTimeInput, title]);
+  }, [requireEnrollmentKey, enrollmentKey, durationMinutesInput, startTimeInput, endTimeInput]);
+
+  const step2Valid = useMemo(() => Object.keys(step2Validation).length === 0, [step2Validation]);
+
+  const basicValidation = useMemo<BasicValidation>(() => {
+    return { ...step1Validation, ...step2Validation };
+  }, [step1Validation, step2Validation]);
+
+  const basicStepValid = useMemo(() => step1Valid && step2Valid, [step1Valid, step2Valid]);
 
   const startDate = useMemo(() => parseLocalDateTime(startTimeInput), [startTimeInput]);
   const endDate = useMemo(() => parseLocalDateTime(endTimeInput), [endTimeInput]);
@@ -212,11 +234,6 @@ export default function CreateTestPage() {
 
     return Math.floor((endDate.getTime() - startDate.getTime()) / 60000);
   }, [endDate, startDate]);
-
-  const basicStepValid = useMemo(
-    () => Object.keys(basicValidation).length === 0,
-    [basicValidation]
-  );
 
   const selectedRulesList = useMemo(
     () => Object.values(selectedRules),
@@ -387,6 +404,9 @@ export default function CreateTestPage() {
         startTime: startDate.toISOString(),
         endTime: endDate.toISOString(),
         durationMinutes: duration,
+        useFullscreen,
+        logActivities,
+        preventCopyPaste,
         qbRules
       });
 
@@ -414,7 +434,7 @@ export default function CreateTestPage() {
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--primary)]">Create Test</p>
           <h1 className="mt-2 text-3xl font-semibold text-slate-900">New test setup</h1>
           <p className="mt-2 max-w-2xl text-sm text-slate-500">
-            Complete the three steps to create and schedule your test.
+            Complete the steps to create and schedule your test.
           </p>
         </div>
       </div>
@@ -437,79 +457,7 @@ export default function CreateTestPage() {
                 onChange={(event) => setTitle(event.target.value)}
                 className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 transition focus:border-[var(--ring)] focus:ring-2 focus:ring-[var(--ring)]/30"
               />
-              {basicValidation.title ? <p className="text-xs text-rose-600">{basicValidation.title}</p> : null}
-            </div>
-
-            <div className="space-y-1.5 md:col-span-2">
-              <label className="flex items-center gap-2 text-sm font-medium text-slate-700 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={requireEnrollmentKey}
-                  onChange={(e) => setRequireEnrollmentKey(e.target.checked)}
-                  className="h-4 w-4 rounded border-slate-300 text-[var(--primary)] focus:ring-[var(--ring)]"
-                />
-                <span>Require Enrollment Key for students to join this test</span>
-              </label>
-            </div>
-
-            {requireEnrollmentKey && (
-              <div className="space-y-1.5">
-                <label htmlFor="enrollmentKey" className="text-sm font-medium text-slate-700">
-                  Enrollment Key
-                </label>
-                <div className="flex gap-2">
-                  <input
-                    id="enrollmentKey"
-                    type={showEnrollmentKey ? "text" : "password"}
-                    value={enrollmentKey}
-                    onChange={(event) => setEnrollmentKey(event.target.value)}
-                    className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 transition focus:border-[var(--ring)] focus:ring-2 focus:ring-[var(--ring)]/30"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowEnrollmentKey((value) => !value)}
-                    className="rounded-xl border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-                  >
-                    {showEnrollmentKey ? "Hide" : "Show"}
-                  </button>
-                </div>
-                <p className="text-xs text-slate-500">Use a key without spaces.</p>
-                {basicValidation.enrollmentKey ? (
-                  <p className="text-xs text-rose-600">{basicValidation.enrollmentKey}</p>
-                ) : null}
-              </div>
-            )}
-
-
-
-            <div className="space-y-1.5">
-              <label htmlFor="duration" className="text-sm font-medium text-slate-700">
-                Duration in minutes
-              </label>
-              <input
-                id="duration"
-                type="number"
-                min={1}
-                value={durationMinutesInput}
-                onChange={(event) => {
-                  const newDurationStr = event.target.value;
-                  setDurationMinutesInput(newDurationStr);
-                  const duration = toPositiveInteger(newDurationStr);
-                  if (duration && startTimeInput) {
-                    const start = new Date(startTimeInput);
-                    if (!isNaN(start.getTime())) {
-                      const end = new Date(start.getTime() + duration * 60000);
-                      const offsetMs = end.getTimezoneOffset() * 60000;
-                      const localEnd = new Date(end.getTime() - offsetMs);
-                      setEndTimeInput(localEnd.toISOString().slice(0, 16));
-                    }
-                  }
-                }}
-                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 transition focus:border-[var(--ring)] focus:ring-2 focus:ring-[var(--ring)]/30"
-              />
-              {basicValidation.durationMinutes ? (
-                <p className="text-xs text-rose-600">{basicValidation.durationMinutes}</p>
-              ) : null}
+              {step1Validation.title ? <p className="text-xs text-rose-600">{step1Validation.title}</p> : null}
             </div>
 
             <div className="space-y-1.5">
@@ -537,7 +485,7 @@ export default function CreateTestPage() {
                 }}
                 className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 transition focus:border-[var(--ring)] focus:ring-2 focus:ring-[var(--ring)]/30"
               />
-              {basicValidation.startTime ? <p className="text-xs text-rose-600">{basicValidation.startTime}</p> : null}
+              {step1Validation.startTime ? <p className="text-xs text-rose-600">{step1Validation.startTime}</p> : null}
             </div>
 
             <div className="space-y-1.5">
@@ -552,7 +500,7 @@ export default function CreateTestPage() {
                 onChange={(event) => setEndTimeInput(event.target.value)}
                 className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 transition focus:border-[var(--ring)] focus:ring-2 focus:ring-[var(--ring)]/30"
               />
-              {basicValidation.endTime ? <p className="text-xs text-rose-600">{basicValidation.endTime}</p> : null}
+              {step1Validation.endTime ? <p className="text-xs text-rose-600">{step1Validation.endTime}</p> : null}
             </div>
 
             <div className="md:col-span-2">
@@ -568,7 +516,7 @@ export default function CreateTestPage() {
             <button
               type="button"
               onClick={() => setStep(2)}
-              disabled={!basicStepValid}
+              disabled={!step1Valid}
               className="inline-flex items-center justify-center rounded-xl bg-[var(--primary)] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[var(--primary-hover)] disabled:cursor-not-allowed disabled:opacity-60"
             >
               Next
@@ -579,7 +527,164 @@ export default function CreateTestPage() {
 
       {step === 2 ? (
         <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-          <h2 className="text-lg font-semibold text-slate-900">Step 2 — Select Question Banks</h2>
+          <h2 className="text-lg font-semibold text-slate-900">Step 2 — Test Settings & Proctoring</h2>
+
+          <div className="mt-5 grid gap-6 md:grid-cols-2">
+            <div className="space-y-4">
+              <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-500">General settings</h3>
+              
+              <div className="space-y-1.5">
+                <label htmlFor="duration" className="text-sm font-medium text-slate-700">
+                  Duration in minutes
+                </label>
+                <input
+                  id="duration"
+                  type="number"
+                  min={1}
+                  value={durationMinutesInput}
+                  onChange={(event) => {
+                    const newDurationStr = event.target.value;
+                    setDurationMinutesInput(newDurationStr);
+                    const duration = toPositiveInteger(newDurationStr);
+                    if (duration && startTimeInput) {
+                      const start = new Date(startTimeInput);
+                      if (!isNaN(start.getTime())) {
+                        const end = new Date(start.getTime() + duration * 60000);
+                        const offsetMs = end.getTimezoneOffset() * 60000;
+                        const localEnd = new Date(end.getTime() - offsetMs);
+                        setEndTimeInput(localEnd.toISOString().slice(0, 16));
+                      }
+                    }
+                  }}
+                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 transition focus:border-[var(--ring)] focus:ring-2 focus:ring-[var(--ring)]/30"
+                />
+                {step2Validation.durationMinutes ? (
+                  <p className="text-xs text-rose-600">{step2Validation.durationMinutes}</p>
+                ) : null}
+              </div>
+
+              <div className="space-y-3 pt-2">
+                <label className="flex items-center gap-2 text-sm font-medium text-slate-700 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={requireEnrollmentKey}
+                    onChange={(e) => setRequireEnrollmentKey(e.target.checked)}
+                    className="h-4 w-4 rounded border-slate-300 text-[var(--primary)] focus:ring-[var(--ring)]"
+                  />
+                  <span>Require Enrollment Key for students to join this test</span>
+                </label>
+
+                {requireEnrollmentKey && (
+                  <div className="space-y-1.5 pl-6">
+                    <label htmlFor="enrollmentKey" className="text-sm font-medium text-slate-700">
+                      Enrollment Key
+                    </label>
+                    <div className="flex gap-2">
+                      <input
+                        id="enrollmentKey"
+                        type={showEnrollmentKey ? "text" : "password"}
+                        value={enrollmentKey}
+                        onChange={(event) => setEnrollmentKey(event.target.value)}
+                        className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 transition focus:border-[var(--ring)] focus:ring-2 focus:ring-[var(--ring)]/30"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowEnrollmentKey((value) => !value)}
+                        className="rounded-xl border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+                      >
+                        {showEnrollmentKey ? "Hide" : "Show"}
+                      </button>
+                    </div>
+                    <p className="text-xs text-slate-500">Use a key without spaces.</p>
+                    {step2Validation.enrollmentKey ? (
+                      <p className="text-xs text-rose-600">{step2Validation.enrollmentKey}</p>
+                    ) : null}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-500">Security & Proctoring</h3>
+              
+              <div className="space-y-3">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 transition hover:border-slate-300">
+                  <label className="flex items-start gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={useFullscreen}
+                      onChange={(e) => setUseFullscreen(e.target.checked)}
+                      className="h-5 w-5 mt-0.5 rounded border-slate-300 text-[var(--primary)] focus:ring-[var(--ring)]"
+                    />
+                    <div>
+                      <span className="text-sm font-semibold text-slate-900 block">Force & Lock Fullscreen Mode</span>
+                      <span className="text-xs text-slate-500 block mt-1">
+                        Forces the student browser into fullscreen mode to take the exam. Student will be blocked if they exit fullscreen.
+                      </span>
+                    </div>
+                  </label>
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 transition hover:border-slate-300">
+                  <label className="flex items-start gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={logActivities}
+                      onChange={(e) => setLogActivities(e.target.checked)}
+                      className="h-5 w-5 mt-0.5 rounded border-slate-300 text-[var(--primary)] focus:ring-[var(--ring)]"
+                    />
+                    <div>
+                      <span className="text-sm font-semibold text-slate-900 block">Enable Proctoring Activity Logging</span>
+                      <span className="text-xs text-slate-500 block mt-1">
+                        Logs proctoring violations such as tab-switching (Alt+Tab), loss of window focus, copy-paste shortcuts, and right-clicks.
+                      </span>
+                    </div>
+                  </label>
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 transition hover:border-slate-300">
+                  <label className="flex items-start gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={preventCopyPaste}
+                      onChange={(e) => setPreventCopyPaste(e.target.checked)}
+                      className="h-5 w-5 mt-0.5 rounded border-slate-300 text-[var(--primary)] focus:ring-[var(--ring)]"
+                    />
+                    <div>
+                      <span className="text-sm font-semibold text-slate-900 block">Strict Copy-Paste & Right-Click Lock</span>
+                      <span className="text-xs text-slate-500 block mt-1">
+                        Blocks right-click context menus, and copy, cut, and paste keyboard shortcuts inside the test window.
+                      </span>
+                    </div>
+                  </label>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-6 flex items-center justify-between">
+            <button
+              type="button"
+              onClick={() => setStep(1)}
+              className="rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+            >
+              Back
+            </button>
+            <button
+              type="button"
+              onClick={() => setStep(3)}
+              disabled={!step2Valid}
+              className="inline-flex items-center justify-center rounded-xl bg-[var(--primary)] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[var(--primary-hover)] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {step === 3 ? (
+        <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+          <h2 className="text-lg font-semibold text-slate-900">Step 3 — Select Question Banks</h2>
 
           {treeError ? (
             <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-900">
@@ -694,6 +799,17 @@ export default function CreateTestPage() {
                                         className="h-4 w-4 rounded border-slate-300 text-[var(--primary)] focus:ring-[var(--ring)]"
                                       />
                                       <span className="font-medium">{bank.name}</span>
+                                      <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${
+                                        bank.type === "easy"
+                                          ? "bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-600/20"
+                                          : bank.type === "medium"
+                                          ? "bg-amber-50 text-amber-800 ring-1 ring-inset ring-amber-600/20"
+                                          : bank.type === "complex"
+                                          ? "bg-rose-50 text-rose-700 ring-1 ring-inset ring-rose-600/20"
+                                          : "bg-indigo-50 text-indigo-700 ring-1 ring-inset ring-indigo-600/20"
+                                      }`}>
+                                        {bank.type}
+                                      </span>
                                     </span>
                                     <span className="text-xs text-slate-500">
                                       {bank._count?.questions ?? 0} questions
@@ -837,14 +953,14 @@ export default function CreateTestPage() {
           <div className="mt-6 flex items-center justify-between">
             <button
               type="button"
-              onClick={() => setStep(1)}
+              onClick={() => setStep(2)}
               className="rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
             >
               Back
             </button>
             <button
               type="button"
-              onClick={() => setStep(3)}
+              onClick={() => setStep(4)}
               disabled={!qbSelectionValid}
               className="inline-flex items-center justify-center rounded-xl bg-[var(--primary)] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[var(--primary-hover)] disabled:cursor-not-allowed disabled:opacity-60"
             >
@@ -854,34 +970,65 @@ export default function CreateTestPage() {
         </div>
       ) : null}
 
-      {step === 3 ? (
+      {step === 4 ? (
         <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-          <h2 className="text-lg font-semibold text-slate-900">Step 3 — Review & Confirm</h2>
+          <h2 className="text-lg font-semibold text-slate-900">Step 4 — Review & Confirm</h2>
 
-          <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-            <h3 className="text-sm font-semibold text-slate-900">Basic info</h3>
-            <dl className="mt-2 grid gap-2 text-sm text-slate-700 md:grid-cols-2">
-              <div>
-                <dt className="font-medium text-slate-900">Title</dt>
-                <dd>{title.trim()}</dd>
-              </div>
-              <div>
-                <dt className="font-medium text-slate-900">Enrollment Key</dt>
-                <dd>{requireEnrollmentKey ? enrollmentKey.trim() : "None (optional)"}</dd>
-              </div>
-              <div>
-                <dt className="font-medium text-slate-900">Start</dt>
-                <dd>{startDate ? formatDateTime(startDate.toISOString()) : "-"}</dd>
-              </div>
-              <div>
-                <dt className="font-medium text-slate-900">End</dt>
-                <dd>{endDate ? formatDateTime(endDate.toISOString()) : "-"}</dd>
-              </div>
-              <div>
-                <dt className="font-medium text-slate-900">Duration</dt>
-                <dd>{durationMinutesInput} min</dd>
-              </div>
-            </dl>
+          <div className="mt-4 grid gap-4 md:grid-cols-2">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <h3 className="text-sm font-semibold text-slate-900">Basic info</h3>
+              <dl className="mt-2 grid gap-2 text-sm text-slate-700">
+                <div>
+                  <dt className="font-medium text-slate-900">Title</dt>
+                  <dd>{title.trim()}</dd>
+                </div>
+                <div>
+                  <dt className="font-medium text-slate-900">Start</dt>
+                  <dd>{startDate ? formatDateTime(startDate.toISOString()) : "-"}</dd>
+                </div>
+                <div>
+                  <dt className="font-medium text-slate-900">End</dt>
+                  <dd>{endDate ? formatDateTime(endDate.toISOString()) : "-"}</dd>
+                </div>
+              </dl>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <h3 className="text-sm font-semibold text-slate-900">Settings & Proctoring</h3>
+              <dl className="mt-2 grid gap-2 text-sm text-slate-700">
+                <div>
+                  <dt className="font-medium text-slate-900">Duration</dt>
+                  <dd>{durationMinutesInput} min</dd>
+                </div>
+                <div>
+                  <dt className="font-medium text-slate-900">Enrollment Key</dt>
+                  <dd>{requireEnrollmentKey ? enrollmentKey.trim() : "None (optional)"}</dd>
+                </div>
+                <div>
+                  <dt className="font-medium text-slate-900">Proctoring status</dt>
+                  <dd className="space-y-1.5 mt-1 text-xs font-semibold">
+                    {useFullscreen && (
+                      <span className="inline-flex rounded-full bg-teal-50 px-2 py-0.5 text-teal-800 border border-teal-200 mr-2">
+                        Lock Fullscreen
+                      </span>
+                    )}
+                    {logActivities && (
+                      <span className="inline-flex rounded-full bg-indigo-50 px-2 py-0.5 text-indigo-800 border border-indigo-200 mr-2">
+                        Activity Logging
+                      </span>
+                    )}
+                    {preventCopyPaste && (
+                      <span className="inline-flex rounded-full bg-amber-50 px-2 py-0.5 text-amber-800 border border-amber-200">
+                        Copy-Paste Disabled
+                      </span>
+                    )}
+                    {!useFullscreen && !logActivities && !preventCopyPaste && (
+                      <span className="text-slate-500 font-medium normal-case">Standard Mode (None)</span>
+                    )}
+                  </dd>
+                </div>
+              </dl>
+            </div>
           </div>
 
           <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200">
@@ -946,7 +1093,7 @@ export default function CreateTestPage() {
           <div className="mt-6 flex items-center justify-between">
             <button
               type="button"
-              onClick={() => setStep(2)}
+              onClick={() => setStep(3)}
               className="rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
             >
               Back

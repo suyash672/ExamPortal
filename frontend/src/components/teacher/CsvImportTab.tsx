@@ -2,7 +2,7 @@
 
 import { useMemo, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
-import { importQuestionsCsv, importQuestionsMoodleHtml, type CsvImportError } from "@/lib/api/questions";
+import { importQuestionsCsv, importQuestionsMoodleHtml, importQuestionsDocx, type CsvImportError } from "@/lib/api/questions";
 import { useToast } from "@/components/ui/ToastProvider";
 
 type CsvImportTabProps = {
@@ -66,6 +66,14 @@ export function CsvImportTab({ qbId, onImported }: CsvImportTabProps) {
         } else {
           showToast(`Imported ${response.imported} questions. First option is set to 100% by default.`);
         }
+      } else if (file.name.toLowerCase().endsWith(".docx")) {
+        const response = await importQuestionsDocx(formData);
+        setImportedCount(response.imported);
+        if (response.warnings && response.warnings.length > 0) {
+          showToast(`Imported ${response.imported} questions with ${response.warnings.length} warnings.`, "error");
+        } else {
+          showToast(`Imported ${response.imported} questions successfully from Word document.`);
+        }
       } else {
         const response = await importQuestionsCsv(formData);
         setImportedCount(response.imported);
@@ -97,9 +105,9 @@ export function CsvImportTab({ qbId, onImported }: CsvImportTabProps) {
     <div className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <h3 className="text-lg font-semibold text-slate-900">Import questions from CSV or Moodle HTML</h3>
+          <h3 className="text-lg font-semibold text-slate-900">Import questions from CSV, Moodle HTML, or Word</h3>
           <p className="mt-1 text-sm text-slate-500">
-            Upload a CSV file or a Moodle XHTML Export file to import questions.
+            Upload a CSV file, a Moodle XHTML Export file, or a Word (.docx) file to import questions.
           </p>
         </div>
         <button
@@ -120,7 +128,7 @@ export function CsvImportTab({ qbId, onImported }: CsvImportTabProps) {
             ref={inputRef}
             id="csv-file"
             type="file"
-            accept=".csv,text/csv,.html,text/html"
+             accept=".csv,text/csv,.html,text/html,.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
             onChange={handleFileChange}
             className="block w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-700 file:mr-4 file:rounded-lg file:border-0 file:bg-slate-900 file:px-4 file:py-2 file:text-sm file:font-medium file:text-white hover:file:bg-slate-800"
           />

@@ -48,12 +48,13 @@ export async function createQb(
   next: NextFunction
 ): Promise<void> {
   try {
-    const { moduleId, name } = req.body as { moduleId: string; name: string };
+    const { moduleId, name, type } = req.body as { moduleId: string; name: string; type?: string };
 
     const createdQb = await prisma.questionBank.create({
       data: {
         moduleId,
-        name
+        name,
+        type: type || "easy"
       }
     });
 
@@ -75,9 +76,14 @@ export async function updateQb(
       throw new AppError("Question bank id is required", 400);
     }
 
+    const { name, type } = req.body as { name?: string; type?: string };
+
     const updatedQb = await prisma.questionBank.update({
       where: { id: qbId },
-      data: req.body as { name: string }
+      data: {
+        ...(name !== undefined && { name }),
+        ...(type !== undefined && { type })
+      }
     });
 
     res.status(200).json(updatedQb);

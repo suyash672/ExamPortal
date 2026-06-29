@@ -102,6 +102,59 @@ async function fetchSubmittedResults(testId: string) {
     .sort((a, b) => b.score - a.score);
 }
 
+async function fetchAllResults(testId: string) {
+  const enrollments = await prisma.enrollment.findMany({
+    where: {
+      testId,
+      attempt: {
+        isNot: null
+      }
+    },
+    include: {
+      student: {
+        select: {
+          name: true,
+          email: true
+        }
+      },
+      attempt: {
+        select: {
+          id: true,
+          score: true,
+          isSubmitted: true,
+          submittedAt: true,
+          isBlocked: true,
+          activities: true
+        }
+      }
+    }
+  });
+
+  return enrollments
+    .map((enrollment) => ({
+      studentName: enrollment.student.name,
+      studentEmail: enrollment.student.email,
+      score: enrollment.attempt?.score ?? null,
+      isSubmitted: enrollment.attempt?.isSubmitted ?? false,
+      submittedAt: enrollment.attempt?.submittedAt ?? null,
+      attemptId: enrollment.attempt?.id,
+      isBlocked: enrollment.attempt?.isBlocked ?? false,
+      activities: enrollment.attempt?.activities ?? []
+    }))
+    .filter(
+      (item): item is {
+        studentName: string;
+        studentEmail: string;
+        score: number | null;
+        isSubmitted: boolean;
+        submittedAt: Date | null;
+        attemptId: string;
+        isBlocked: boolean;
+        activities: any[];
+      } => Boolean(item.attemptId)
+    );
+}
+
 export async function getTestResults(
   req: Request,
   res: Response,
@@ -120,7 +173,7 @@ export async function getTestResults(
 
     const ownedTest = await getOwnedTestOrRespond(req, testId);
 
-    const results = await fetchSubmittedResults(testId);
+    const results = await fetchAllResults(testId);
 
     res.status(200).json(
       results.map((item) => ({
@@ -221,10 +274,12 @@ export async function getAttemptDetail(
       testTitle: ownedTest.title,
       enrollmentId: attempt.enrollmentId,
       isSubmitted: attempt.isSubmitted,
+      isBlocked: attempt.isBlocked ?? false,
       startedAt: attempt.startedAt,
       submittedAt: attempt.submittedAt,
       score: attempt.score,
       totalMarks: ownedTest.totalMarks,
+      activities: attempt.activities || [],
       student: {
         id: attempt.enrollment.student.id,
         name: attempt.enrollment.student.name,
@@ -349,6 +404,49 @@ export async function exportResultsCsv(
     );
 
     res.status(200).send(csv);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function updateAttemptBlockStatus(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    if (!req.user) {
+      throw new AppError("Unauthorized", 401);
+    }
+    const testId = getParamAsString(req.params.testId);
+    const attemptId = getParamAsString(req.params.attemptId);
+    const { isBlocked } = req.body as { isBlocked: boolean };
+
+    if (!testId || !attemptId || typeof isBlocked !== "boolean") {
+      throw new AppError("testId, attemptId and isBlocked boolean are required", 400);
+    }
+
+    const ownedTest = await getOwnedTestOrRespond(req, testId);
+
+    const attempt = await prisma.attempt.findFirst({
+      where: {
+        id: attemptId,
+        enrollment: {
+          testId: ownedTest.id
+        }
+      }
+    });
+
+    if (!attempt) {
+      throw new AppError("Attempt not found", 404);
+    }
+
+    const updated = await prisma.attempt.update({
+      where: { id: attemptId },
+      data: { isBlocked }
+    });
+
+    res.status(200).json(updated);
   } catch (error) {
     next(error);
   }

@@ -11,6 +11,7 @@ import {
 } from "../controllers/question.controller";
 import { importCsv } from "../controllers/questioncsv.controller";
 import { importMoodleHtml } from "../controllers/questionhtml.controller";
+import { importDocx } from "../controllers/questiondocx.controller";
 import { requireAuth, requireRole } from "../middleware/auth";
 import { requireQbOwnership, requireQuestionOwnership } from "../middleware/ownership";
 import { validate } from "../middleware/validate";
@@ -75,6 +76,17 @@ questionRouter.post(
     })
   ),
   importMoodleHtml
+);
+
+questionRouter.post(
+  "/api/questions/import-docx",
+  upload.single("file"),
+  validate(
+    z.object({
+      qbId: z.string().regex(/^[a-fA-F0-9]{24}$/)
+    })
+  ),
+  importDocx
 );
 
 export default questionRouter;

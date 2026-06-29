@@ -100,17 +100,96 @@ export async function deleteSubject(
       throw new AppError("Subject id is required", 400);
     }
 
-    const moduleCount = await prisma.module.count({
-      where: { subjectId }
+    // Find all modules under the subject
+    const modules = await prisma.module.findMany({
+      where: { subjectId },
+      select: { id: true }
     });
+    const moduleIds = modules.map((m) => m.id);
 
-    if (moduleCount > 0) {
-      throw new AppError("Delete all modules first", 400);
-    }
-
-    await prisma.subject.delete({
-      where: { id: subjectId }
+    // Find all question banks under those modules
+    const qbs = await prisma.questionBank.findMany({
+      where: { moduleId: { in: moduleIds } },
+      select: { id: true, name: true }
     });
+    const qbIds = qbs.map((q) => q.id);
+
+    // Programmatic cascading delete inside a transaction
+    await prisma.$transaction(
+      async (tx) => {
+        // 1. Find all questions in these question banks
+        const questions = await tx.question.findMany({
+          where: { qbId: { in: qbIds } },
+          select: { id: true }
+        });
+        const questionIds = questions.map((q) => q.id);
+
+        // 2. Find MCQ options associated with those questions
+        const mcqOptions = await tx.mcqOption.findMany({
+          where: { questionId: { in: questionIds } },
+          select: { id: true }
+        });
+        const mcqOptionIds = mcqOptions.map((o) => o.id);
+
+        // 3. Find AttemptQuestions referencing those questions
+        const attemptQuestions = await tx.attemptQuestion.findMany({
+          where: { questionId: { in: questionIds } },
+          select: { id: true }
+        });
+        const aqIds = attemptQuestions.map((aq) => aq.id);
+
+        // 4. Delete AttemptAnswerOptions linked to the MCQ options
+        await tx.attemptAnswerOption.deleteMany({
+          where: { mcqOptionId: { in: mcqOptionIds } }
+        });
+
+        // 5. Delete AttemptAnswers linked to the AttemptQuestions
+        await tx.attemptAnswer.deleteMany({
+          where: { attemptQuestionId: { in: aqIds } }
+        });
+
+        // 6. Delete AttemptQuestions themselves
+        await tx.attemptQuestion.deleteMany({
+          where: { id: { in: aqIds } }
+        });
+
+        // 7. Delete TestQbRules referencing the question banks (removes rules/sections from tests)
+        await tx.testQbRule.deleteMany({
+          where: { qbId: { in: qbIds } }
+        });
+
+        // 8. Delete MCQ options and text accepted answers of the questions
+        await tx.mcqOption.deleteMany({
+          where: { questionId: { in: questionIds } }
+        });
+        await tx.textAcceptedAnswer.deleteMany({
+          where: { questionId: { in: questionIds } }
+        });
+
+        // 9. Delete questions
+        await tx.question.deleteMany({
+          where: { qbId: { in: qbIds } }
+        });
+
+        // 10. Delete question banks
+        await tx.questionBank.deleteMany({
+          where: { moduleId: { in: moduleIds } }
+        });
+
+        // 11. Delete modules
+        await tx.module.deleteMany({
+          where: { subjectId }
+        });
+
+        // 12. Delete the subject itself
+        await tx.subject.delete({
+          where: { id: subjectId }
+        });
+      },
+      {
+        timeout: 60000
+      }
+    );
 
     res.status(200).json({ message: "Subject deleted" });
   } catch (error) {

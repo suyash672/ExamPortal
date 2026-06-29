@@ -7,6 +7,8 @@ type AttemptDetailDrawerProps = {
   loading: boolean;
   error: string | null;
   attempt: AttemptDetail | null;
+  onRefresh?: () => void;
+  onToggleBlock?: (isBlocked: boolean) => void;
   onClose: () => void;
 };
 
@@ -19,6 +21,8 @@ export function AttemptDetailDrawer({
   loading,
   error,
   attempt,
+  onRefresh,
+  onToggleBlock,
   onClose
 }: AttemptDetailDrawerProps) {
   return (
@@ -55,14 +59,40 @@ export function AttemptDetailDrawer({
                 <p className="mt-1 text-sm text-slate-500">{attempt?.student.email ?? ""}</p>
               </div>
 
-              <button
-                type="button"
-                onClick={onClose}
-                className="rounded-full p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
-                aria-label="Close drawer"
-              >
-                ×
-              </button>
+              <div className="flex items-center gap-2">
+                {attempt && onToggleBlock && (
+                  <button
+                    type="button"
+                    onClick={() => onToggleBlock(!attempt.isBlocked)}
+                    disabled={loading}
+                    className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                      attempt.isBlocked
+                        ? "bg-emerald-600 text-white border-emerald-700 hover:bg-emerald-500"
+                        : "bg-rose-600 text-white border-rose-700 hover:bg-rose-500"
+                    }`}
+                  >
+                    {attempt.isBlocked ? "🔓 Unblock Student" : "🚫 Block Student"}
+                  </button>
+                )}
+                {onRefresh && attempt && (
+                  <button
+                    type="button"
+                    onClick={onRefresh}
+                    disabled={loading}
+                    className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    🔄 Refresh Live Logs
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="rounded-full p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
+                  aria-label="Close drawer"
+                >
+                  ×
+                </button>
+              </div>
             </div>
           </div>
 
@@ -89,6 +119,40 @@ export function AttemptDetailDrawer({
                     <span className="font-semibold text-slate-900">{attempt.totalMarks}</span>
                   </p>
                 </div>
+
+                {attempt.activities && attempt.activities.length > 0 && (
+                  <div className="rounded-2xl border border-rose-200 bg-rose-50/50 p-4">
+                    <h3 className="text-xs font-bold uppercase tracking-[0.16em] text-rose-800 flex items-center gap-1.5">
+                      ⚠️ Proctoring Logs ({attempt.activities.length} alerts)
+                    </h3>
+                    <div className="mt-3 space-y-2 max-h-48 overflow-y-auto pr-1">
+                      {attempt.activities.map((act, index) => {
+                        const dateStr = new Intl.DateTimeFormat("en-IN", {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                          second: "2-digit"
+                        }).format(new Date(act.timestamp));
+
+                        let badgeColor = "bg-rose-100 text-rose-800 border-rose-200";
+                        if (act.type === "FOCUS_LOSS") {
+                          badgeColor = "bg-amber-100 text-amber-800 border-amber-200";
+                        }
+
+                        return (
+                          <div key={index} className="flex flex-col gap-1 rounded-xl border border-slate-200 bg-white p-3 text-xs shadow-sm">
+                            <div className="flex items-center justify-between">
+                              <span className={`inline-flex rounded-full border px-2 py-0.5 font-bold uppercase tracking-wider text-[9px] ${badgeColor}`}>
+                                {act.type}
+                              </span>
+                              <span className="text-slate-400 font-medium">{dateStr}</span>
+                            </div>
+                            <p className="mt-1 text-slate-700 font-medium">{act.message}</p>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
 
                 {attempt.questions.map((item, index) => {
                   const selected = new Set(item.studentAnswer?.selectedOptionIds ?? []);

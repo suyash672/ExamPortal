@@ -8,6 +8,7 @@ import {
   getAttempt,
   saveAnswer,
   submitAttempt,
+  logAttemptActivity,
   type AttemptPayload
 } from "@/lib/api/student";
 
@@ -62,6 +63,8 @@ export default function AttemptPage() {
   const [submitting, setSubmitting] = useState(false);
   const [timesUpSubmitting, setTimesUpSubmitting] = useState(false);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [started, setStarted] = useState(false);
 
   const saveTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const savedTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
@@ -87,6 +90,7 @@ export default function AttemptPage() {
 
       setAttempt(response);
       setTimeRemainingSeconds(response.timeRemainingSeconds);
+      setIsFullscreen(response.useFullscreen ? !!document.fullscreenElement : false);
 
       const nextStates: Record<string, LocalQuestionState> = {};
       const nextSaveStates: Record<string, SaveState> = {};
@@ -120,6 +124,106 @@ export default function AttemptPage() {
       Object.values(savedTimers).forEach((timer) => clearTimeout(timer));
     };
   }, [loadAttempt]);
+
+  // Fullscreen Change Handler
+  useEffect(() => {
+    if (!attempt || !attempt.useFullscreen) return;
+
+    const handleFullscreenChange = () => {
+      const currentFullscreen = !!document.fullscreenElement;
+      setIsFullscreen(currentFullscreen);
+
+      if (!currentFullscreen && !attempt.isSubmitted) {
+        if (attempt.logActivities) {
+          void logAttemptActivity(attempt.id, {
+            type: "FULLSCREEN_EXIT",
+            message: "Student exited fullscreen mode."
+          });
+        }
+        showToast("Proctoring Warning: Fullscreen mode exited!", "error");
+      }
+    };
+
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
+  }, [attempt, showToast]);
+
+  // Poll attempt status to check for block updates from proctor
+  useEffect(() => {
+    if (!attempt || attempt.isSubmitted || loading) return;
+
+    const pollInterval = setInterval(async () => {
+      try {
+        const freshAttempt = await getAttempt(attempt.id);
+        if (freshAttempt.isBlocked !== attempt.isBlocked) {
+          setAttempt(freshAttempt);
+        }
+      } catch (err) {
+        // Silently skip transient API errors
+      }
+    }, 5000);
+
+    return () => clearInterval(pollInterval);
+  }, [attempt, loading]);
+
+  // Activity Tracking (Focus loss)
+  useEffect(() => {
+    if (!attempt || !attempt.logActivities || attempt.isSubmitted) return;
+
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        void logAttemptActivity(attempt.id, {
+          type: "FOCUS_LOSS",
+          message: "Student switched tabs or minimized the browser."
+        });
+        showToast("Activity logged: Switched tabs / lost focus", "error");
+      }
+    };
+
+    const handleBlur = () => {
+      void logAttemptActivity(attempt.id, {
+        type: "FOCUS_LOSS",
+        message: "Student clicked outside the browser window."
+      });
+      showToast("Activity logged: Lost window focus", "error");
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("blur", handleBlur);
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("blur", handleBlur);
+    };
+  }, [attempt, showToast]);
+
+  // Copy Paste Block
+  useEffect(() => {
+    if (!attempt || !attempt.preventCopyPaste) return;
+
+    const preventDefault = (e: Event) => {
+      e.preventDefault();
+      showToast("Copy, cut, and paste options are disabled for this test.", "error");
+      if (attempt.logActivities) {
+        void logAttemptActivity(attempt.id, {
+          type: "COPY_PASTE_ATTEMPT",
+          message: `Student attempted copy/paste or right-click: ${e.type}`
+        });
+      }
+    };
+
+    document.addEventListener("copy", preventDefault);
+    document.addEventListener("paste", preventDefault);
+    document.addEventListener("cut", preventDefault);
+    document.addEventListener("contextmenu", preventDefault);
+
+    return () => {
+      document.removeEventListener("copy", preventDefault);
+      document.removeEventListener("paste", preventDefault);
+      document.removeEventListener("cut", preventDefault);
+      document.removeEventListener("contextmenu", preventDefault);
+    };
+  }, [attempt, showToast]);
 
   useEffect(() => {
     if (!attempt || attempt.isSubmitted || loading) {
@@ -339,6 +443,80 @@ export default function AttemptPage() {
   const currentSaveState = currentQuestion ? saveStates[currentQuestion.id] ?? "idle" : "idle";
   const isLastQuestion = currentQuestionIndex === attempt.attemptQuestions.length - 1;
   const isFirstQuestion = currentQuestionIndex === 0;
+
+  const enterFullscreen = async () => {
+    try {
+      await document.documentElement.requestFullscreen();
+      setIsFullscreen(true);
+      setStarted(true);
+    } catch {
+      showToast("Failed to enter fullscreen mode. Please check browser permissions.", "error");
+      setStarted(true);
+    }
+  };
+
+  if (attempt.isBlocked) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center bg-slate-950 px-4 text-center text-white">
+        <div className="w-full max-w-md rounded-3xl border border-rose-500/30 bg-rose-950 p-8 shadow-2xl">
+          <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-full bg-rose-500/10 text-rose-500 text-3xl">
+            🚫
+          </div>
+          <h2 className="text-xl font-bold text-slate-100">Exam Blocked</h2>
+          <p className="mt-3 text-sm text-slate-400">
+            You have been manually blocked from this exam by the instructor/proctor due to policy violations.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (attempt.useFullscreen && !started) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center bg-slate-950 px-4 text-center text-white">
+        <div className="w-full max-w-md rounded-3xl border border-slate-800 bg-slate-900 p-8 shadow-2xl">
+          <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-full bg-teal-500/10 text-teal-500 text-3xl">
+            🔒
+          </div>
+          <h2 className="text-xl font-bold text-slate-100">Fullscreen Exam</h2>
+          <p className="mt-3 text-sm text-slate-400">
+            This exam requires Fullscreen Mode. Please click the button below to enter fullscreen and begin your exam.
+          </p>
+          <button
+            type="button"
+            onClick={enterFullscreen}
+            className="mt-6 w-full rounded-xl bg-[var(--primary)] py-3 text-sm font-semibold text-white transition hover:bg-[var(--primary-hover)]"
+          >
+            Start Exam in Fullscreen
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (attempt.useFullscreen && started && !isFullscreen) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center bg-slate-950 px-4 text-center text-white">
+        <div className="w-full max-w-md rounded-3xl border border-slate-800 bg-slate-900 p-8 shadow-2xl">
+          <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-full bg-rose-500/10 text-rose-500 text-3xl">
+            🔒
+          </div>
+          <h2 className="text-xl font-bold text-slate-100">Fullscreen Mode Required</h2>
+          <p className="mt-3 text-sm text-slate-400">
+            This test has security settings enabled and must be taken in Fullscreen Mode. 
+            Exiting fullscreen or switching tabs will be logged as an activity violation.
+          </p>
+          <button
+            type="button"
+            onClick={enterFullscreen}
+            className="mt-6 w-full rounded-xl bg-[var(--primary)] py-3 text-sm font-semibold text-white transition hover:bg-[var(--primary-hover)]"
+          >
+            Enter Fullscreen & Continue
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[linear-gradient(180deg,#f8fafc_0%,#eef2ff_100%)] text-slate-900">

@@ -84,6 +84,16 @@ export async function importQuestionsMoodleHtml(formData: FormData): Promise<{ i
   return response.data;
 }
 
+export async function importQuestionsDocx(formData: FormData): Promise<{ imported: number, warnings: string[] }> {
+  const response = await api.post<{ imported: number, warnings: string[] }>("/api/questions/import-docx", formData, {
+    headers: {
+      "Content-Type": "multipart/form-data"
+    }
+  });
+
+  return response.data;
+}
+
 export async function deduplicateQuestions(qbId: string): Promise<{ deleted: number }> {
   const response = await api.post<{ deleted: number }>("/api/questions/deduplicate", { qbId });
   return response.data;

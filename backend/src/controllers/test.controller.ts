@@ -18,23 +18,35 @@ export async function createTest(
       throw new AppError("Unauthorized", 401);
     }
 
-    const { title, enrollmentKey, startTime, endTime, durationMinutes, qbRules } =
-      req.body as {
-        title: string;
-        enrollmentKey?: string | null;
-        startTime: Date;
-        endTime: Date;
-        durationMinutes: number;
-        qbRules: Array<{
-          qbId: string;
-          questionsToPick: number;
-          marksPerQuestion: number;
-          randomQuestions?: boolean;
-          randomOrder?: boolean;
-          uniqueQuestions?: boolean;
-          shuffleOptions?: boolean;
-        }>;
-      };
+    const {
+      title,
+      enrollmentKey,
+      startTime,
+      endTime,
+      durationMinutes,
+      qbRules,
+      useFullscreen,
+      logActivities,
+      preventCopyPaste
+    } = req.body as {
+      title: string;
+      enrollmentKey?: string | null;
+      startTime: Date;
+      endTime: Date;
+      durationMinutes: number;
+      useFullscreen?: boolean;
+      logActivities?: boolean;
+      preventCopyPaste?: boolean;
+      qbRules: Array<{
+        qbId: string;
+        questionsToPick: number;
+        marksPerQuestion: number;
+        randomQuestions?: boolean;
+        randomOrder?: boolean;
+        uniqueQuestions?: boolean;
+        shuffleOptions?: boolean;
+      }>;
+    };
 
   const qbIds = Array.from(new Set(qbRules.map((rule) => rule.qbId)));
 
@@ -110,7 +122,10 @@ export async function createTest(
           startTime,
           endTime,
           durationMinutes,
-          totalMarks
+          totalMarks,
+          useFullscreen: useFullscreen ?? false,
+          logActivities: logActivities ?? false,
+          preventCopyPaste: preventCopyPaste ?? false
         }
       });
 

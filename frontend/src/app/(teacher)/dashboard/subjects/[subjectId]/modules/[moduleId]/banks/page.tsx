@@ -50,6 +50,8 @@ export default function QuestionBanksPage() {
   const [showForm, setShowForm] = useState(false);
   const [editingBank, setEditingBank] = useState<QuestionBankRecord | null>(null);
   const [formName, setFormName] = useState("");
+  const [formType, setFormType] = useState("easy");
+  const [customType, setCustomType] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
   const [formSaving, setFormSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -100,6 +102,8 @@ export default function QuestionBanksPage() {
   const startCreate = () => {
     setEditingBank(null);
     setFormName("");
+    setFormType("easy");
+    setCustomType("");
     setFormError(null);
     setShowForm(true);
   };
@@ -107,6 +111,13 @@ export default function QuestionBanksPage() {
   const startEdit = (bank: QuestionBankRecord) => {
     setEditingBank(bank);
     setFormName(bank.name);
+    if (["easy", "medium", "complex"].includes(bank.type)) {
+      setFormType(bank.type);
+      setCustomType("");
+    } else {
+      setFormType("custom");
+      setCustomType(bank.type);
+    }
     setFormError(null);
     setShowForm(true);
   };
@@ -121,20 +132,30 @@ export default function QuestionBanksPage() {
       return;
     }
 
+    const typeToSave = formType === "custom" ? customType.trim() : formType;
+    if (!typeToSave) {
+      setFormError("Question bank type is required.");
+      return;
+    }
+
     try {
       setFormSaving(true);
 
+      const payload = { name: trimmedName, type: typeToSave };
+
       if (editingBank) {
-        await updateQuestionBank(editingBank.id, { name: trimmedName });
+        await updateQuestionBank(editingBank.id, payload);
         showToast("Question bank updated");
       } else {
-        await createQuestionBank(moduleId, { name: trimmedName });
+        await createQuestionBank(moduleId, payload);
         showToast("Question bank created");
       }
 
       setShowForm(false);
       setEditingBank(null);
       setFormName("");
+      setFormType("easy");
+      setCustomType("");
       await loadData();
     } catch (error: any) {
       setFormError(getApiErrorMessage(error, "Unable to save question bank."));
@@ -225,22 +246,58 @@ export default function QuestionBanksPage() {
             </button>
           </div>
 
-          <form className="mt-5 flex flex-col gap-4 sm:flex-row" onSubmit={(event) => void handleSubmit(event)}>
-            <div className="flex-1 space-y-1.5">
-              <label className="text-sm font-medium text-slate-700" htmlFor="qb-name">
-                Question bank name
-              </label>
-              <input
-                id="qb-name"
-                type="text"
-                value={formName}
-                onChange={(event) => setFormName(event.target.value)}
-                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 transition focus:border-[var(--ring)] focus:ring-2 focus:ring-[var(--ring)]/30"
-              />
-              {formError ? <p className="text-xs text-[var(--danger)]">{formError}</p> : null}
+          <form className="mt-5 space-y-4" onSubmit={(event) => void handleSubmit(event)}>
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-slate-700" htmlFor="qb-name">
+                  Question bank name
+                </label>
+                <input
+                  id="qb-name"
+                  type="text"
+                  value={formName}
+                  onChange={(event) => setFormName(event.target.value)}
+                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 transition focus:border-[var(--ring)] focus:ring-2 focus:ring-[var(--ring)]/30"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-slate-700" htmlFor="qb-type">
+                  Question bank type
+                </label>
+                <select
+                  id="qb-type"
+                  value={formType}
+                  onChange={(event) => setFormType(event.target.value)}
+                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 transition focus:border-[var(--ring)] focus:ring-2 focus:ring-[var(--ring)]/30"
+                >
+                  <option value="easy">Easy</option>
+                  <option value="medium">Medium</option>
+                  <option value="complex">Complex</option>
+                  <option value="custom">Custom...</option>
+                </select>
+              </div>
             </div>
 
-            <div className="flex items-end gap-3 sm:pt-6">
+            {formType === "custom" ? (
+              <div className="space-y-1.5 max-w-md">
+                <label className="text-sm font-medium text-slate-700" htmlFor="qb-custom-type">
+                  Custom type name
+                </label>
+                <input
+                  id="qb-custom-type"
+                  type="text"
+                  placeholder="e.g. Programming, Advanced, etc."
+                  value={customType}
+                  onChange={(event) => setCustomType(event.target.value)}
+                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 transition focus:border-[var(--ring)] focus:ring-2 focus:ring-[var(--ring)]/30"
+                />
+              </div>
+            ) : null}
+
+            {formError ? <p className="text-xs text-[var(--danger)]">{formError}</p> : null}
+
+            <div className="flex items-center justify-end gap-3 pt-2">
               <button
                 type="submit"
                 disabled={formSaving}
@@ -296,6 +353,9 @@ export default function QuestionBanksPage() {
                   Question bank
                 </th>
                 <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                  Type
+                </th>
+                <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
                   Questions
                 </th>
                 <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
@@ -307,6 +367,19 @@ export default function QuestionBanksPage() {
               {questionBanks.map((bank) => (
                 <tr key={bank.id} className="transition hover:bg-slate-50/60">
                   <td className="px-5 py-4 text-sm font-medium text-slate-900">{bank.name}</td>
+                  <td className="px-5 py-4 text-sm">
+                    <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold uppercase tracking-wider ${
+                      bank.type === "easy"
+                        ? "bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-600/20"
+                        : bank.type === "medium"
+                        ? "bg-amber-50 text-amber-800 ring-1 ring-inset ring-amber-600/20"
+                        : bank.type === "complex"
+                        ? "bg-rose-50 text-rose-700 ring-1 ring-inset ring-rose-600/20"
+                        : "bg-indigo-50 text-indigo-700 ring-1 ring-inset ring-indigo-600/20"
+                    }`}>
+                      {bank.type}
+                    </span>
+                  </td>
                   <td className="px-5 py-4 text-sm text-slate-600">{bank._count?.questions ?? 0}</td>
                   <td className="px-5 py-4">
                     <div className="flex flex-wrap items-center gap-2">

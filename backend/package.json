@@ -5,11 +5,13 @@
   "main": "dist/index.js",
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
+    "analyze": "ts-node-dev --transpile-only src/analyze_docx.ts",
     "build": "tsc",
     "start": "node dist/index.js"
   },
   "dependencies": {
     "@prisma/client": "^6.6.0",
+    "adm-zip": "^0.5.17",
     "bcryptjs": "^2.4.3",
     "cheerio": "^1.2.0",
     "cors": "^2.8.5",
@@ -25,6 +27,7 @@
     "zx": "^8.5.3"
   },
   "devDependencies": {
+    "@types/adm-zip": "^0.5.8",
     "@types/bcryptjs": "^2.4.6",
     "@types/cors": "^2.8.17",
     "@types/express": "^5.0.1",
