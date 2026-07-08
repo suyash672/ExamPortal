@@ -4,6 +4,7 @@ const createMcqSchemaBase = z.object({
   qbId: z.string().regex(/^[a-fA-F0-9]{24}$/),
   type: z.literal("MCQ"),
   questionText: z.string().trim().min(5).max(1000),
+  imageUrl: z.string().trim().optional().nullable(),
   options: z.array(z.object({
     optionText: z.string().trim().min(1).max(500),
     scorePercent: z.number().int().min(0).max(100)
@@ -14,6 +15,7 @@ const createTextSchemaBase = z.object({
   qbId: z.string().regex(/^[a-fA-F0-9]{24}$/),
   type: z.literal("TEXT"),
   questionText: z.string().trim().min(5).max(1000),
+  imageUrl: z.string().trim().optional().nullable(),
   acceptedAnswers: z.array(
     z
       .string()

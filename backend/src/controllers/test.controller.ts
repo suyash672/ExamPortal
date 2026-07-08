@@ -27,7 +27,10 @@ export async function createTest(
       qbRules,
       useFullscreen,
       logActivities,
-      preventCopyPaste
+      preventCopyPaste,
+      saveAttempts,
+      infiniteTries,
+      resultsReveal
     } = req.body as {
       title: string;
       enrollmentKey?: string | null;
@@ -37,6 +40,9 @@ export async function createTest(
       useFullscreen?: boolean;
       logActivities?: boolean;
       preventCopyPaste?: boolean;
+      saveAttempts?: boolean;
+      infiniteTries?: boolean;
+      resultsReveal?: boolean;
       qbRules: Array<{
         qbId: string;
         questionsToPick: number;
@@ -125,7 +131,10 @@ export async function createTest(
           totalMarks,
           useFullscreen: useFullscreen ?? false,
           logActivities: logActivities ?? false,
-          preventCopyPaste: preventCopyPaste ?? false
+          preventCopyPaste: preventCopyPaste ?? false,
+          saveAttempts: saveAttempts ?? true,
+          infiniteTries: infiniteTries ?? false,
+          resultsReveal: resultsReveal ?? true
         }
       });
 

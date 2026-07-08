@@ -61,8 +61,13 @@ async function fetchSubmittedResults(testId: string) {
   const enrollments = await prisma.enrollment.findMany({
     where: {
       testId,
-      attempt: {
-        isSubmitted: true
+      test: {
+        saveAttempts: true
+      },
+      attempts: {
+        some: {
+          isSubmitted: true
+        }
       }
     },
     include: {
@@ -72,7 +77,10 @@ async function fetchSubmittedResults(testId: string) {
           email: true
         }
       },
-      attempt: {
+      attempts: {
+        where: {
+          isSubmitted: true
+        },
         select: {
           id: true,
           score: true,
@@ -82,32 +90,38 @@ async function fetchSubmittedResults(testId: string) {
     }
   });
 
-  return enrollments
-    .map((enrollment) => ({
-      studentName: enrollment.student.name,
-      studentEmail: enrollment.student.email,
-      score: enrollment.attempt?.score ?? 0,
-      submittedAt: enrollment.attempt?.submittedAt,
-      attemptId: enrollment.attempt?.id
-    }))
-    .filter(
-      (item): item is {
-        studentName: string;
-        studentEmail: string;
-        score: number;
-        submittedAt: Date | null;
-        attemptId: string;
-      } => Boolean(item.attemptId)
-    )
-    .sort((a, b) => b.score - a.score);
+  const results: Array<{
+    studentName: string;
+    studentEmail: string;
+    score: number;
+    submittedAt: Date | null;
+    attemptId: string;
+  }> = [];
+
+  for (const enrollment of enrollments) {
+    for (const attempt of enrollment.attempts) {
+      results.push({
+        studentName: enrollment.student.name,
+        studentEmail: enrollment.student.email,
+        score: attempt.score ?? 0,
+        submittedAt: attempt.submittedAt,
+        attemptId: attempt.id
+      });
+    }
+  }
+
+  return results.sort((a, b) => b.score - a.score);
 }
 
 async function fetchAllResults(testId: string) {
   const enrollments = await prisma.enrollment.findMany({
     where: {
       testId,
-      attempt: {
-        isNot: null
+      test: {
+        saveAttempts: true
+      },
+      attempts: {
+        some: {}
       }
     },
     include: {
@@ -117,7 +131,7 @@ async function fetchAllResults(testId: string) {
           email: true
         }
       },
-      attempt: {
+      attempts: {
         select: {
           id: true,
           score: true,
@@ -130,29 +144,33 @@ async function fetchAllResults(testId: string) {
     }
   });
 
-  return enrollments
-    .map((enrollment) => ({
-      studentName: enrollment.student.name,
-      studentEmail: enrollment.student.email,
-      score: enrollment.attempt?.score ?? null,
-      isSubmitted: enrollment.attempt?.isSubmitted ?? false,
-      submittedAt: enrollment.attempt?.submittedAt ?? null,
-      attemptId: enrollment.attempt?.id,
-      isBlocked: enrollment.attempt?.isBlocked ?? false,
-      activities: enrollment.attempt?.activities ?? []
-    }))
-    .filter(
-      (item): item is {
-        studentName: string;
-        studentEmail: string;
-        score: number | null;
-        isSubmitted: boolean;
-        submittedAt: Date | null;
-        attemptId: string;
-        isBlocked: boolean;
-        activities: any[];
-      } => Boolean(item.attemptId)
-    );
+  const results: Array<{
+    studentName: string;
+    studentEmail: string;
+    score: number | null;
+    isSubmitted: boolean;
+    submittedAt: Date | null;
+    attemptId: string;
+    isBlocked: boolean;
+    activities: any[];
+  }> = [];
+
+  for (const enrollment of enrollments) {
+    for (const attempt of enrollment.attempts) {
+      results.push({
+        studentName: enrollment.student.name,
+        studentEmail: enrollment.student.email,
+        score: attempt.score,
+        isSubmitted: attempt.isSubmitted,
+        submittedAt: attempt.submittedAt,
+        attemptId: attempt.id,
+        isBlocked: attempt.isBlocked ?? false,
+        activities: attempt.activities || []
+      });
+    }
+  }
+
+  return results;
 }
 
 export async function getTestResults(

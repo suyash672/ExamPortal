@@ -8,6 +8,7 @@ import {
   getAttempt,
   saveAnswer,
   submitAttempt,
+  submitTestPreview,
   logAttemptActivity,
   type AttemptPayload
 } from "@/lib/api/student";
@@ -84,7 +85,7 @@ export default function AttemptPage() {
 
       if (response.isSubmitted) {
         showToast(`Test already submitted. Score: ${response.score ?? 0}/${response.totalMarks}`);
-        router.replace("/tests");
+        router.replace(attemptId.startsWith("preview-") ? "/dashboard/tests" : "/tests");
         return;
       }
 
@@ -254,20 +255,39 @@ export default function AttemptPage() {
           setSubmitting(true);
         }
 
-        const response = await submitAttempt({ attemptId: attempt.id });
-        showToast(`Submitted. Score: ${response.score}/${response.totalMarks}`);
-        router.replace("/tests");
+        let response;
+        if (attemptId.startsWith("preview-")) {
+          const testId = attemptId.replace("preview-", "");
+          const answersPayload: Record<string, { selectedOptionIds: string[]; textAnswer: string }> = {};
+          for (const item of attempt.attemptQuestions) {
+            const state = questionStates[item.id];
+            if (state) {
+              // We map item.id (the attempt question identifier) to the answer
+              answersPayload[item.id] = {
+                selectedOptionIds: state.selectedOptionIds,
+                textAnswer: state.textAnswer
+              };
+            }
+          }
+          response = await submitTestPreview(testId, answersPayload);
+          showToast(`Preview Submitted. Mock Score: ${response.score}/${response.totalMarks}`);
+          router.replace("/dashboard/tests");
+        } else {
+          response = await submitAttempt({ attemptId: attempt.id });
+          showToast(`Submitted. Score: ${response.score}/${response.totalMarks}`);
+          router.replace("/tests");
+        }
       } catch (apiError: any) {
         showToast(getApiErrorMessage(apiError, "Unable to submit test"), "error");
         if (apiError?.response?.status === 400) {
-          router.replace("/tests");
+          router.replace(attemptId.startsWith("preview-") ? "/dashboard/tests" : "/tests");
         }
       } finally {
         setSubmitting(false);
         setTimesUpSubmitting(false);
       }
     },
-    [attempt, router, showToast, submitting, timesUpSubmitting]
+    [attempt, attemptId, questionStates, router, showToast, submitting, timesUpSubmitting]
   );
 
   useEffect(() => {
@@ -327,6 +347,18 @@ export default function AttemptPage() {
 
       saveTimersRef.current[attemptQuestionId] = setTimeout(async () => {
         try {
+          if (attemptId.startsWith("preview-")) {
+            setSaveStates((current) => ({ ...current, [attemptQuestionId]: "saved" }));
+            const existingSavedTimer = savedTimersRef.current[attemptQuestionId];
+            if (existingSavedTimer) {
+              clearTimeout(existingSavedTimer);
+            }
+            savedTimersRef.current[attemptQuestionId] = setTimeout(() => {
+              setSaveStates((current) => ({ ...current, [attemptQuestionId]: "idle" }));
+            }, 1500);
+            return;
+          }
+
           await saveAnswer({
             attemptId: attempt.id,
             attemptQuestionId,
@@ -349,7 +381,7 @@ export default function AttemptPage() {
 
           if (message === "Time expired, test auto-submitted") {
             showToast(message, "error");
-            router.replace("/tests");
+            router.replace(attemptId.startsWith("preview-") ? "/dashboard/tests" : "/tests");
             return;
           }
 
@@ -597,9 +629,19 @@ export default function AttemptPage() {
                 <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
                   Question {currentQuestionIndex + 1}
                 </p>
-                <h2 className="mt-2 text-xl font-semibold text-slate-900">
-                  {currentQuestion?.question.questionText}
-                </h2>
+                <h2 
+                  className="mt-2 text-xl font-semibold text-slate-900 whitespace-pre-wrap"
+                  dangerouslySetInnerHTML={{ __html: currentQuestion?.question.questionText || "" }}
+                />
+                {currentQuestion?.question.imageUrl && (
+                  <div className="mt-4 max-w-full">
+                    <img
+                      src={currentQuestion.question.imageUrl.startsWith("http") ? currentQuestion.question.imageUrl : `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000"}${currentQuestion.question.imageUrl}`}
+                      alt="Question context"
+                      className="max-h-64 rounded-xl object-contain border border-slate-200"
+                    />
+                  </div>
+                )}
                 {currentQuestion?.question.type === "MCQ" ? (
                   <p className="mt-1 text-sm font-medium text-slate-500">
                     {currentQuestion.question.mcqMode === "single"
@@ -662,7 +704,7 @@ export default function AttemptPage() {
                           }}
                           className="mt-1 h-4 w-4 border-slate-400 text-[var(--primary)] focus:ring-[var(--primary)]"
                         />
-                        <span>{option.optionText}</span>
+                        <span dangerouslySetInnerHTML={{ __html: option.optionText }} />
                       </label>
                     );
                   })}

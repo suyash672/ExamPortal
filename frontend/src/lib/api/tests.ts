@@ -17,6 +17,9 @@ export type TestListItem = {
   useFullscreen?: boolean;
   logActivities?: boolean;
   preventCopyPaste?: boolean;
+  saveAttempts?: boolean;
+  infiniteTries?: boolean;
+  resultsReveal?: boolean;
 };
 
 export type TestQbRulePayload = {
@@ -39,6 +42,9 @@ export type CreateTestPayload = {
   useFullscreen?: boolean;
   logActivities?: boolean;
   preventCopyPaste?: boolean;
+  saveAttempts?: boolean;
+  infiniteTries?: boolean;
+  resultsReveal?: boolean;
 };
 
 export type CreatedTest = {
@@ -55,6 +61,9 @@ export type CreatedTest = {
   useFullscreen?: boolean;
   logActivities?: boolean;
   preventCopyPaste?: boolean;
+  saveAttempts?: boolean;
+  infiniteTries?: boolean;
+  resultsReveal?: boolean;
   testQbRules: Array<{
     id: string;
     testId: string;

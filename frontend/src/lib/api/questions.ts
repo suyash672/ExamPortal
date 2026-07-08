@@ -11,6 +11,7 @@ export type QuestionRecord = {
   qbId: string;
   type: "MCQ" | "TEXT";
   questionText: string;
+  imageUrl?: string | null;
   createdAt: string;
   deletedAt: string | null;
   mcqOptions: McqQuestionOption[];
@@ -25,6 +26,7 @@ export type QuestionPayload =
       qbId: string;
       type: "MCQ";
       questionText: string;
+      imageUrl?: string | null;
       options: Array<{
         optionText: string;
         scorePercent: number;
@@ -34,6 +36,7 @@ export type QuestionPayload =
       qbId: string;
       type: "TEXT";
       questionText: string;
+      imageUrl?: string | null;
       acceptedAnswers: string[];
     };
 
@@ -86,6 +89,16 @@ export async function importQuestionsMoodleHtml(formData: FormData): Promise<{ i
 
 export async function importQuestionsDocx(formData: FormData): Promise<{ imported: number, warnings: string[] }> {
   const response = await api.post<{ imported: number, warnings: string[] }>("/api/questions/import-docx", formData, {
+    headers: {
+      "Content-Type": "multipart/form-data"
+    }
+  });
+
+  return response.data;
+}
+
+export async function uploadQuestionImage(formData: FormData): Promise<{ imageUrl: string }> {
+  const response = await api.post<{ imageUrl: string }>("/api/questions/upload-image", formData, {
     headers: {
       "Content-Type": "multipart/form-data"
     }

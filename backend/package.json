@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
     "analyze": "ts-node-dev --transpile-only src/analyze_docx.ts",
+    "run-script": "ts-node-dev --transpile-only",
     "build": "tsc",
     "start": "node dist/index.js"
   },

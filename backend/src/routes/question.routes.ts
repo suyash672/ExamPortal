@@ -7,7 +7,8 @@ import {
   getQuestions,
   updateQuestion,
   deduplicateQuestions,
-  bulkSaveQuestions
+  bulkSaveQuestions,
+  uploadQuestionImage
 } from "../controllers/question.controller";
 import { importCsv } from "../controllers/questioncsv.controller";
 import { importMoodleHtml } from "../controllers/questionhtml.controller";
@@ -44,6 +45,11 @@ questionRouter.post(
   "/api/banks/:qbId/questions/bulk",
   requireQbOwnership,
   bulkSaveQuestions
+);
+questionRouter.post(
+  "/api/questions/upload-image",
+  upload.single("file"),
+  uploadQuestionImage
 );
 questionRouter.delete("/api/questions/:id", requireQuestionOwnership, deleteQuestion);
 questionRouter.post(

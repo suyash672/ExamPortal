@@ -8,15 +8,18 @@ import { Spinner } from "@/components/ui/Spinner";
 import { useAuth } from "@/context/AuthContext";
 
 export default function StudentLayout({ children }: { children: ReactNode }) {
-  const { user, loading, isStudent, logout, sessionRestoreError } = useAuth();
+  const { user, loading, isStudent, isTeacher, logout, sessionRestoreError } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
 
+  const isPreview = pathname.startsWith("/tests/preview-");
+  const allowed = isStudent || (isTeacher && isPreview);
+
   useEffect(() => {
-    if (!loading && !isStudent && !sessionRestoreError) {
+    if (!loading && !allowed && !sessionRestoreError) {
       router.replace("/login");
     }
-  }, [isStudent, loading, sessionRestoreError, router]);
+  }, [allowed, loading, sessionRestoreError, router]);
 
   const handleLogout = async () => {
     await logout();
@@ -47,7 +50,7 @@ export default function StudentLayout({ children }: { children: ReactNode }) {
     );
   }
 
-  if (!isStudent) {
+  if (!allowed) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-50 text-slate-600">
         Redirecting to login...

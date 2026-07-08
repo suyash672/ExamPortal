@@ -7,6 +7,7 @@ import { z } from "zod";
 import {
   createQuestion,
   updateQuestion,
+  uploadQuestionImage,
   type QuestionRecord
 } from "@/lib/api/questions";
 import { useToast } from "@/components/ui/ToastProvider";
@@ -20,6 +21,7 @@ const mcqQuestionSchema = z.object({
   qbId: z.string(),
   type: z.literal("MCQ"),
   questionText: z.string().trim().min(5, "Question text must be at least 5 characters.").max(1000),
+  imageUrl: z.string().optional().nullable(),
   options: z.array(mcqOptionSchema).min(2, "Add at least 2 options.").max(6, "Maximum 6 options allowed.")
 });
 
@@ -27,6 +29,7 @@ const textQuestionSchema = z.object({
   qbId: z.string(),
   type: z.literal("TEXT"),
   questionText: z.string().trim().min(5, "Question text must be at least 5 characters.").max(1000),
+  imageUrl: z.string().optional().nullable(),
   acceptedAnswers: z.array(
     z.string().trim().min(1, "Accepted answer is required.").max(200).transform((value) => value.toLowerCase())
   ).min(1, "Add at least 1 accepted answer.").max(10, "Maximum 10 accepted answers allowed.")
@@ -83,6 +86,7 @@ function normalizeQuestion(
       qbId,
       type: "MCQ",
       questionText: "",
+      imageUrl: "",
       options: [
         { optionText: "", scorePercent: 0 },
         { optionText: "", scorePercent: 100 }
@@ -97,6 +101,7 @@ function normalizeQuestion(
       qbId: question.qbId || qbId,
       type: "MCQ",
       questionText: question.questionText,
+      imageUrl: question.imageUrl || "",
       options: mcqOptions.length
         ? mcqOptions.map((option) => ({
             optionText: option.optionText,
@@ -115,6 +120,7 @@ function normalizeQuestion(
     qbId: question.qbId || qbId,
     type: "TEXT",
     questionText: question.questionText,
+    imageUrl: question.imageUrl || "",
     acceptedAnswers: acceptedAnswers.length
       ? acceptedAnswers.map((answer) => answer.answerText)
       : [""]
@@ -207,6 +213,8 @@ export function QuestionFormModal({
   const { showToast } = useToast();
   const isEdit = Boolean(question);
 
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
+
   const {
     register,
     control,
@@ -225,9 +233,28 @@ export function QuestionFormModal({
   });
 
   const type = useWatch({ control, name: "type" });
+  const imageUrl = useWatch({ control, name: "imageUrl" });
   const optionValues = useWatch({ control, name: "options" }) ?? [];
   const acceptedAnswerValues = useWatch({ control, name: "acceptedAnswers" }) ?? [];
   const questionErrors = errors as any;
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsUploadingImage(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await uploadQuestionImage(formData);
+      setValue("imageUrl", res.imageUrl, { shouldValidate: true, shouldDirty: true });
+      showToast("Image uploaded successfully");
+    } catch (err) {
+      showToast("Failed to upload image", "error");
+    } finally {
+      setIsUploadingImage(false);
+    }
+  };
 
   const optionArray = useFieldArray({
     control: control as any,
@@ -298,6 +325,7 @@ export function QuestionFormModal({
       return {
         type: val.type,
         questionText: (val.questionText || "").trim(),
+        imageUrl: val.imageUrl || "",
         options: val.type === "MCQ" ? (val.options || []).map((o: any) => ({
           optionText: (o?.optionText || "").trim(),
           scorePercent: Number(o?.scorePercent || 0)
@@ -329,6 +357,31 @@ export function QuestionFormModal({
     }
   };
 
+  useEffect(() => {
+    if (!open) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        const activeTag = document.activeElement?.tagName.toLowerCase();
+        if (activeTag === "textarea" && !e.altKey && !e.ctrlKey) {
+          return;
+        }
+
+        e.preventDefault();
+        if (e.key === "ArrowDown" && hasNext && !isSubmitting) {
+          void handleNavigate("next");
+        } else if (e.key === "ArrowUp" && hasPrevious && !isSubmitting) {
+          void handleNavigate("prev");
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [open, hasNext, hasPrevious, isSubmitting, handleNavigate]);
+
   const handleClose = () => {
     if (checkIsDirty()) {
       handleSubmit(
@@ -353,26 +406,26 @@ export function QuestionFormModal({
       onClick={handleClose}
       className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 px-4 py-6 backdrop-blur-sm"
     >
-        <div 
-          onClick={(e) => e.stopPropagation()}
-          className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl"
-        >
-        <div className="mb-5 flex items-start justify-between gap-4">
+      <div 
+        onClick={(e) => e.stopPropagation()}
+        className="max-h-[90vh] w-full max-w-3xl flex flex-col rounded-3xl border border-slate-200 bg-white shadow-2xl overflow-hidden"
+      >
+        <div className="flex items-center justify-between gap-4 border-b border-slate-100 bg-slate-50/50 px-6 py-4">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--primary)]">
               {isEdit ? "Edit question" : "New question"}
             </p>
-            <div className="flex items-center gap-4">
-              <h2 className="mt-1 text-xl font-semibold text-slate-900">
+            <div className="flex items-center gap-4 mt-1">
+              <h2 className="text-xl font-semibold text-slate-900">
                 {isEdit ? `Update question ${questionNumber ? `#${questionNumber}` : ""}` : "Create a question"}
               </h2>
               {isEdit && onPrevious && onNext && (
-                <div className="mt-1 flex items-center gap-1 rounded-xl bg-slate-50 p-1">
+                <div className="flex items-center gap-1 rounded-xl bg-slate-50 p-1">
                   <button
                     type="button"
                     onClick={() => handleNavigate("prev")}
                     disabled={!hasPrevious || isSubmitting}
-                    className="rounded-lg px-2 py-1 text-sm font-medium text-slate-600 hover:bg-white hover:text-slate-900 disabled:opacity-30 disabled:hover:bg-transparent"
+                    className="rounded-lg px-2 py-1 text-xs font-medium text-slate-600 hover:bg-white hover:text-slate-900 disabled:opacity-30 disabled:hover:bg-transparent"
                   >
                     &lt; Prev
                   </button>
@@ -380,7 +433,7 @@ export function QuestionFormModal({
                     type="button"
                     onClick={() => handleNavigate("next")}
                     disabled={!hasNext || isSubmitting}
-                    className="rounded-lg px-2 py-1 text-sm font-medium text-slate-600 hover:bg-white hover:text-slate-900 disabled:opacity-30 disabled:hover:bg-transparent"
+                    className="rounded-lg px-2 py-1 text-xs font-medium text-slate-600 hover:bg-white hover:text-slate-900 disabled:opacity-30 disabled:hover:bg-transparent"
                   >
                     Next &gt;
                   </button>
@@ -391,14 +444,14 @@ export function QuestionFormModal({
           <button
             type="button"
             onClick={handleClose}
-            className="rounded-full p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
+            className="rounded-full p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition"
             aria-label="Close question modal"
           >
-            ×
+            <span className="flex h-5 w-5 items-center justify-center text-xl font-bold leading-none">×</span>
           </button>
         </div>
 
-        <form className="space-y-5" onSubmit={handleSubmit(onSubmit)} noValidate>
+        <form className="flex-1 overflow-y-auto p-6 space-y-5" onSubmit={handleSubmit(onSubmit)} noValidate>
           <div className="grid grid-cols-2 gap-2 rounded-xl bg-slate-100 p-1">
             {[
               { label: "MCQ", value: "MCQ" as const },
@@ -431,6 +484,43 @@ export function QuestionFormModal({
             {errors.questionText ? (
               <p className="text-xs text-[var(--danger)]">{errors.questionText.message}</p>
             ) : null}
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium text-slate-700">
+              Question image (optional)
+            </label>
+            {imageUrl ? (
+              <div className="relative inline-block mt-1">
+                <img
+                  src={imageUrl.startsWith("http") ? imageUrl : `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000"}${imageUrl}`}
+                  alt="Question Preview"
+                  className="max-h-40 rounded-xl object-contain border border-slate-200"
+                />
+                <button
+                  type="button"
+                  onClick={() => setValue("imageUrl", null, { shouldValidate: true, shouldDirty: true })}
+                  className="absolute -right-2 -top-2 rounded-full bg-rose-600 p-1 text-white shadow-md hover:bg-rose-500 transition"
+                  title="Remove image"
+                >
+                  <span className="flex h-4 w-4 items-center justify-center text-xs font-bold">×</span>
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-3 mt-1">
+                <label className="cursor-pointer rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 transition">
+                  {isUploadingImage ? "Uploading..." : "Upload Image"}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleImageUpload}
+                    disabled={isUploadingImage}
+                    className="hidden"
+                  />
+                </label>
+                <span className="text-xs text-slate-400">Supports PNG, JPG, JPEG, GIF, WEBP</span>
+              </div>
+            )}
           </div>
 
           {type === "MCQ" ? (

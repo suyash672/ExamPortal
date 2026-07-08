@@ -1,5 +1,7 @@
 import api from "../axios";
 
+import type { AttemptDetail } from "./results";
+
 export type StudentTestSummary = {
   id: string;
   title: string;
@@ -10,14 +12,17 @@ export type StudentTestSummary = {
   enrolled: boolean;
   enrollmentId: string | null;
   hasEnrollmentKey: boolean;
-  attempt: {
+  resultsReveal: boolean;
+  infiniteTries: boolean;
+  saveAttempts: boolean;
+  attempts: Array<{
     id: string;
     isSubmitted: boolean;
     score: number | null;
     startedAt: string;
     submittedAt: string | null;
     timeRemainingSeconds: number;
-  } | null;
+  }>;
 };
 
 export type EnrollPayload = {
@@ -37,6 +42,7 @@ export type BeginTestQuestion = {
     id: string;
     type: "MCQ" | "TEXT";
     questionText: string;
+    imageUrl?: string | null;
     qbId: string;
     mcqMode: "single" | "multi";
     mcqOptions: Array<{
@@ -119,4 +125,20 @@ export async function logAttemptActivity(
   payload: { type: string; message: string }
 ): Promise<void> {
   await api.post(`/api/student/attempt/${attemptId}/activity`, payload);
+}
+
+export async function getStudentAttemptReview(attemptId: string): Promise<AttemptDetail> {
+  const response = await api.get<AttemptDetail>(`/api/student/attempt/${attemptId}/review`);
+  return response.data;
+}
+
+export async function submitTestPreview(
+  testId: string,
+  answers: Record<string, { selectedOptionIds: string[]; textAnswer: string }>
+): Promise<{ score: number; totalMarks: number }> {
+  const response = await api.post<{ score: number; totalMarks: number }>(
+    `/api/student/attempt/preview-${testId}/submit`,
+    { answers }
+  );
+  return response.data;
 }

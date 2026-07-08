@@ -97,6 +97,7 @@ model Question {
   questionBank     QuestionBank         @relation(fields: [qbId], references: [id])
   type             QuestionType
   questionText     String
+  imageUrl         String?
   createdAt        DateTime             @default(now())
   deletedAt        DateTime?
   mcqOptions       McqOption[]
@@ -139,6 +140,11 @@ model Test {
   useFullscreen   Boolean      @default(false)
   logActivities   Boolean      @default(false)
   preventCopyPaste Boolean     @default(false)
+
+  // Advanced configurations
+  saveAttempts     Boolean      @default(true)
+  infiniteTries    Boolean      @default(false)
+  resultsReveal    Boolean      @default(true)
 }
 
 model TestQbRule {
@@ -162,14 +168,14 @@ model Enrollment {
   testId     String    @db.ObjectId
   test       Test      @relation(fields: [testId], references: [id])
   enrolledAt DateTime  @default(now())
-  attempt    Attempt?
+  attempts   Attempt[]
 
   @@unique([studentId, testId])
 }
 
 model Attempt {
   id           String            @id @default(auto()) @map("_id") @db.ObjectId
-  enrollmentId String            @unique @db.ObjectId
+  enrollmentId String            @db.ObjectId
   enrollment   Enrollment        @relation(fields: [enrollmentId], references: [id])
   startedAt    DateTime          @default(now())
   submittedAt  DateTime?

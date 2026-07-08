@@ -20,7 +20,10 @@ export const createTestSchema = z
     qbRules: z.array(testQbRuleSchema).min(1),
     useFullscreen: z.boolean().default(false),
     logActivities: z.boolean().default(false),
-    preventCopyPaste: z.boolean().default(false)
+    preventCopyPaste: z.boolean().default(false),
+    saveAttempts: z.boolean().default(true),
+    infiniteTries: z.boolean().default(false),
+    resultsReveal: z.boolean().default(true)
   })
   .superRefine((data, ctx) => {
     if (data.endTime <= data.startTime) {

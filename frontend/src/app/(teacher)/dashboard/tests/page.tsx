@@ -61,6 +61,7 @@ export default function TeacherTestsPage() {
   const [error, setError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<TestListItem | null>(null);
+  const [createDropdownOpen, setCreateDropdownOpen] = useState(false);
 
   const loadTests = useCallback(async () => {
     setLoading(true);
@@ -123,12 +124,53 @@ export default function TeacherTestsPage() {
           </p>
         </div>
 
-        <Link
-          href="/dashboard/tests/new"
-          className="inline-flex items-center justify-center rounded-xl bg-[var(--primary)] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[var(--primary-hover)]"
-        >
-          Create Test
-        </Link>
+        <div className="relative inline-block text-left">
+          <button
+            type="button"
+            onClick={() => setCreateDropdownOpen((prev) => !prev)}
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-[var(--primary)] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[var(--primary-hover)] shadow-sm focus:outline-none"
+          >
+            <span>Create Test</span>
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+
+          {createDropdownOpen && (
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setCreateDropdownOpen(false)} />
+              <div className="absolute right-0 mt-2 w-72 origin-top-right rounded-2xl border border-slate-200 bg-white p-2 shadow-xl ring-1 ring-black/5 z-20 focus:outline-none">
+                <p className="px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-slate-400">Select Test Type</p>
+                <div className="grid gap-1">
+                  <Link
+                    href="/dashboard/tests/new?type=QUIZ"
+                    onClick={() => setCreateDropdownOpen(false)}
+                    className="flex flex-col rounded-xl px-3 py-2.5 text-left hover:bg-slate-50 transition"
+                  >
+                    <span className="text-sm font-semibold text-slate-900">Quiz</span>
+                    <span className="text-xs text-slate-500 mt-0.5">Single-module practice. Answers revealed, results not stored for teacher.</span>
+                  </Link>
+                  <Link
+                    href="/dashboard/tests/new?type=TEST"
+                    onClick={() => setCreateDropdownOpen(false)}
+                    className="flex flex-col rounded-xl px-3 py-2.5 text-left hover:bg-slate-50 transition"
+                  >
+                    <span className="text-sm font-semibold text-slate-900">Test</span>
+                    <span className="text-xs text-slate-500 mt-0.5">Standard assessment. Multi-module, results stored in dashboard.</span>
+                  </Link>
+                  <Link
+                    href="/dashboard/tests/new?type=EXAM"
+                    onClick={() => setCreateDropdownOpen(false)}
+                    className="flex flex-col rounded-xl px-3 py-2.5 text-left hover:bg-slate-50 transition"
+                  >
+                    <span className="text-sm font-semibold text-slate-900">Exam</span>
+                    <span className="text-xs text-slate-500 mt-0.5">Formal examination. Whole subject curriculum, high monitoring.</span>
+                  </Link>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
       </div>
 
       {error ? (
@@ -200,25 +242,32 @@ export default function TeacherTestsPage() {
                     )}
                   </td>
                   <td className="px-4 py-4">
-                    <div className="flex flex-wrap items-center gap-2">
-                      {test.isLocked ? (
-                        <Link
-                          href={`/dashboard/tests/${test.id}/results`}
-                          className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
-                        >
-                          Results
-                        </Link>
-                      ) : null}
+                      <div className="flex flex-wrap items-center gap-2">
+                        {test.isLocked ? (
+                          <Link
+                            href={`/dashboard/tests/${test.id}/results`}
+                            className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
+                          >
+                            Results
+                          </Link>
+                        ) : null}
 
-                      <button
-                        type="button"
-                        onClick={() => setPendingDelete(test)}
-                        disabled={test.isLocked || deletingId === test.id}
-                        className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-rose-50 hover:text-rose-600 disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        {deletingId === test.id ? "Deleting..." : "Delete"}
-                      </button>
-                    </div>
+                        <Link
+                          href={`/tests/preview-${test.id}`}
+                          className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-sky-50 hover:text-sky-600 hover:border-sky-200"
+                        >
+                          Preview
+                        </Link>
+
+                        <button
+                          type="button"
+                          onClick={() => setPendingDelete(test)}
+                          disabled={test.isLocked || deletingId === test.id}
+                          className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-rose-50 hover:text-rose-600 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {deletingId === test.id ? "Deleting..." : "Delete"}
+                        </button>
+                      </div>
                   </td>
                 </tr>
               ))}

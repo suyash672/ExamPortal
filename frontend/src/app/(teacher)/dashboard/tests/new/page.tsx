@@ -129,6 +129,11 @@ export default function CreateTestPage() {
   const [logActivities, setLogActivities] = useState(false);
   const [preventCopyPaste, setPreventCopyPaste] = useState(false);
 
+  // Behavioral Settings States
+  const [saveAttempts, setSaveAttempts] = useState(true);
+  const [infiniteTries, setInfiniteTries] = useState(false);
+  const [resultsReveal, setResultsReveal] = useState(true);
+
   const [globalRulesEnabled, setGlobalRulesEnabled] = useState(false);
   const [globalRules, setGlobalRules] = useState({
     randomQuestions: true,
@@ -407,6 +412,9 @@ export default function CreateTestPage() {
         useFullscreen,
         logActivities,
         preventCopyPaste,
+        saveAttempts,
+        infiniteTries,
+        resultsReveal,
         qbRules
       });
 
@@ -654,6 +662,61 @@ export default function CreateTestPage() {
                       <span className="text-sm font-semibold text-slate-900 block">Strict Copy-Paste & Right-Click Lock</span>
                       <span className="text-xs text-slate-500 block mt-1">
                         Blocks right-click context menus, and copy, cut, and paste keyboard shortcuts inside the test window.
+                      </span>
+                    </div>
+                  </label>
+                </div>
+              </div>
+
+              <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-500 mt-6 block">Behavior & Results</h3>
+              
+              <div className="space-y-3 mt-4">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 transition hover:border-slate-300">
+                  <label className="flex items-start gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={saveAttempts}
+                      onChange={(e) => setSaveAttempts(e.target.checked)}
+                      className="h-5 w-5 mt-0.5 rounded border-slate-300 text-[var(--primary)] focus:ring-[var(--ring)]"
+                    />
+                    <div>
+                      <span className="text-sm font-semibold text-slate-900 block">Save Attempts History (Storage)</span>
+                      <span className="text-xs text-slate-500 block mt-1">
+                        Saves student attempts and grades in the database. Disable to make it a practice test where results are deleted immediately on submission.
+                      </span>
+                    </div>
+                  </label>
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 transition hover:border-slate-300">
+                  <label className="flex items-start gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={infiniteTries}
+                      onChange={(e) => setInfiniteTries(e.target.checked)}
+                      className="h-5 w-5 mt-0.5 rounded border-slate-300 text-[var(--primary)] focus:ring-[var(--ring)]"
+                    />
+                    <div>
+                      <span className="text-sm font-semibold text-slate-900 block">Allow Infinite Attempts (Tries)</span>
+                      <span className="text-xs text-slate-500 block mt-1">
+                        Allows students to take the exam multiple times. All past attempt histories are stored and viewable.
+                      </span>
+                    </div>
+                  </label>
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 transition hover:border-slate-300">
+                  <label className="flex items-start gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={resultsReveal}
+                      onChange={(e) => setResultsReveal(e.target.checked)}
+                      className="h-5 w-5 mt-0.5 rounded border-slate-300 text-[var(--primary)] focus:ring-[var(--ring)]"
+                    />
+                    <div>
+                      <span className="text-sm font-semibold text-slate-900 block">Reveal Results to Students</span>
+                      <span className="text-xs text-slate-500 block mt-1">
+                        Allows students to view their detailed questions, selected answers, and correct answers after submitting the exam.
                       </span>
                     </div>
                   </label>
@@ -1025,6 +1088,20 @@ export default function CreateTestPage() {
                     {!useFullscreen && !logActivities && !preventCopyPaste && (
                       <span className="text-slate-500 font-medium normal-case">Standard Mode (None)</span>
                     )}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="font-medium text-slate-900 mt-2">Test Behavior</dt>
+                  <dd className="space-y-1.5 mt-1 text-xs font-semibold">
+                    <span className={`inline-flex rounded-full px-2 py-0.5 border ${saveAttempts ? "bg-emerald-50 text-emerald-800 border-emerald-200" : "bg-rose-50 text-rose-800 border-rose-200"} mr-2`}>
+                      {saveAttempts ? "Save Attempts (Storage On)" : "Don't Save Attempts (Storage Off)"}
+                    </span>
+                    <span className={`inline-flex rounded-full px-2 py-0.5 border ${infiniteTries ? "bg-purple-50 text-purple-800 border-purple-200" : "bg-slate-100 text-slate-600 border-slate-200"} mr-2`}>
+                      {infiniteTries ? "Infinite Attempts" : "Single Attempt Limit"}
+                    </span>
+                    <span className={`inline-flex rounded-full px-2 py-0.5 border ${resultsReveal ? "bg-blue-50 text-blue-800 border-blue-200" : "bg-amber-50 text-amber-800 border-amber-200"}`}>
+                      {resultsReveal ? "Reveal Correct Answers" : "Hide Correct Answers"}
+                    </span>
                   </dd>
                 </div>
               </dl>

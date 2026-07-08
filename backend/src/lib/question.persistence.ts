@@ -6,12 +6,14 @@ export type QuestionInput =
       qbId: string;
       type: "MCQ";
       questionText: string;
+      imageUrl?: string | null;
       options: Array<{ optionText: string; scorePercent: number }>;
     }
   | {
       qbId: string;
       type: "TEXT";
       questionText: string;
+      imageUrl?: string | null;
       acceptedAnswers: string[];
     };
 
@@ -55,7 +57,8 @@ export async function createQuestionRecord(
     data: {
       qbId: data.qbId,
       type: data.type,
-      questionText: data.questionText
+      questionText: data.questionText,
+      imageUrl: data.imageUrl
     }
   });
 
@@ -89,7 +92,8 @@ export async function replaceQuestionRecord(
     data: {
       qbId: data.qbId,
       type: data.type,
-      questionText: data.questionText
+      questionText: data.questionText,
+      imageUrl: data.imageUrl
     }
   });
 

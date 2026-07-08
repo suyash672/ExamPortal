@@ -282,6 +282,7 @@ export default function QuestionsPage() {
       qbId: values.qbId,
       type: values.type,
       questionText: values.questionText,
+      imageUrl: values.imageUrl,
       mcqOptions: values.type === "MCQ" ? values.options.map((o: any) => ({
         id: `draft-opt-${Math.random().toString(36).substring(2)}`,
         optionText: o.optionText,
@@ -318,6 +319,7 @@ export default function QuestionsPage() {
             qbId: draft.qbId,
             type: draft.type as "MCQ" | "TEXT",
             questionText: draft.questionText,
+            imageUrl: draft.imageUrl,
             options: draft.mcqOptions?.map(o => ({ optionText: o.optionText, scorePercent: o.scorePercent })) ?? [],
             acceptedAnswers: draft.acceptedAnswers?.map(a => a.answerText) ?? []
           });
@@ -331,6 +333,7 @@ export default function QuestionsPage() {
           const extractCore = (q: QuestionRecord) => ({
             questionText: q.questionText,
             type: q.type,
+            imageUrl: q.imageUrl,
             options: q.mcqOptions?.map(o => ({ optionText: o.optionText, scorePercent: o.scorePercent })) ?? [],
             acceptedAnswers: q.acceptedAnswers?.map(a => a.answerText) ?? []
           });
@@ -342,6 +345,7 @@ export default function QuestionsPage() {
               qbId: draft.qbId,
               type: draft.type as "MCQ" | "TEXT",
               questionText: draft.questionText,
+              imageUrl: draft.imageUrl,
               options: draft.mcqOptions?.map(o => ({ optionText: o.optionText, scorePercent: o.scorePercent })) ?? [],
               acceptedAnswers: draft.acceptedAnswers?.map(a => a.answerText) ?? []
             });
@@ -374,6 +378,48 @@ export default function QuestionsPage() {
       setEditingQuestion(questionRows[currentEditIndex + 1]);
     }
   }, [hasNextEdit, questionRows, currentEditIndex]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (expandedQuestionId === null) return;
+
+      const activeTag = document.activeElement?.tagName.toLowerCase();
+      if (activeTag === "input" || activeTag === "textarea") {
+        return;
+      }
+
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+
+        const currentIndex = questionRows.findIndex((q) => q.id === expandedQuestionId);
+        if (currentIndex === -1) return;
+
+        let nextIndex = currentIndex;
+        if (e.key === "ArrowDown") {
+          nextIndex = Math.min(questionRows.length - 1, currentIndex + 1);
+        } else {
+          nextIndex = Math.max(0, currentIndex - 1);
+        }
+
+        if (nextIndex !== currentIndex) {
+          const nextQuestion = questionRows[nextIndex];
+          setExpandedQuestionId(nextQuestion.id);
+
+          setTimeout(() => {
+            const element = document.getElementById(`question-row-${nextQuestion.id}`);
+            if (element) {
+              element.scrollIntoView({ behavior: "smooth", block: "center" });
+            }
+          }, 50);
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [expandedQuestionId, questionRows]);
 
   return (
     <div className="space-y-6">
@@ -520,7 +566,11 @@ export default function QuestionsPage() {
 
                       return (
                         <Fragment key={question.id}>
-                          <tr key={question.id} className="align-top transition hover:bg-slate-50/60">
+                          <tr
+                            key={question.id}
+                            id={`question-row-${question.id}`}
+                            className="align-top transition hover:bg-slate-50/60"
+                          >
                             <td className="px-4 py-4 align-top text-sm font-medium text-slate-500">
                               {index + 1}
                             </td>
@@ -533,7 +583,11 @@ export default function QuestionsPage() {
                                 onClick={() => setExpandedQuestionId(expanded ? null : question.id)}
                                 className="text-left font-medium text-slate-900 hover:text-[var(--primary)]"
                               >
-                                {truncateText(question.questionText, 80)}
+                                {expanded ? (
+                                  <span className="whitespace-pre-wrap block" dangerouslySetInnerHTML={{ __html: question.questionText }} />
+                                ) : (
+                                  truncateText(question.questionText, 80)
+                                )}
                               </button>
                             </td>
                             <td className="px-4 py-4">
@@ -544,21 +598,21 @@ export default function QuestionsPage() {
                                     setEditingQuestion(question);
                                     setQuestionModalOpen(true);
                                   }}
-                                  className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+                                  className="rounded-xl border border-emerald-200 bg-emerald-50/30 px-3 py-2 text-sm font-medium text-emerald-700 transition hover:bg-emerald-50 hover:text-emerald-800 hover:border-emerald-300 shadow-sm"
                                 >
                                   Edit
                                 </button>
                                 <button
                                   type="button"
                                   onClick={() => handleDuplicate(question, index)}
-                                  className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+                                  className="rounded-xl border border-sky-200 bg-sky-50/30 px-3 py-2 text-sm font-medium text-sky-700 transition hover:bg-sky-50 hover:text-sky-800 hover:border-sky-300 shadow-sm"
                                 >
                                   Duplicate
                                 </button>
                                 <button
                                   type="button"
                                   onClick={() => setPendingDelete(question)}
-                                  className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-rose-50 hover:text-rose-600"
+                                  className="rounded-xl border border-rose-200 bg-rose-50/30 px-3 py-2 text-sm font-medium text-rose-700 transition hover:bg-rose-50 hover:text-rose-800 hover:border-rose-300 shadow-sm"
                                 >
                                   Delete
                                 </button>
@@ -567,18 +621,63 @@ export default function QuestionsPage() {
                           </tr>
                           {expanded && question.type === "MCQ" ? (
                             <tr>
-                              <td colSpan={3} className="bg-slate-50 px-4 py-4">
+                              <td colSpan={4} className="bg-slate-50 px-4 py-4">
                                 <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                                  {question.imageUrl && (
+                                    <div className="mb-4">
+                                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                                        Question Image
+                                      </p>
+                                      <div className="mt-2">
+                                        <img
+                                          src={question.imageUrl.startsWith("http") ? question.imageUrl : `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000"}${question.imageUrl}`}
+                                          alt="Question context"
+                                          className="max-h-48 rounded-xl object-contain border border-slate-200"
+                                        />
+                                      </div>
+                                    </div>
+                                  )}
                                   <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
                                     MCQ options
                                   </p>
                                   <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-                                    {question.mcqOptions?.map((option) => (
-                                      <div key={option.id ?? option.optionText} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
-                                        <span className="font-medium text-slate-900">{option.optionText}</span>
-                                        <span className="ml-2 text-slate-500">({option.scorePercent}%)</span>
-                                      </div>
-                                    ))}
+                                    {(() => {
+                                      const isSingleChoice = (question.mcqOptions ?? []).filter(o => o.scorePercent > 0).length === 1;
+                                      return question.mcqOptions?.map((option) => {
+                                        const isCorrect = option.scorePercent > 0;
+                                        if (isSingleChoice) {
+                                          const className = isCorrect
+                                            ? "rounded-xl border border-emerald-200 bg-emerald-50/60 px-3 py-2 text-sm text-emerald-950 shadow-sm"
+                                            : "rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700";
+                                          return (
+                                            <div key={option.id ?? option.optionText} className={className}>
+                                              <span 
+                                                className={isCorrect ? "font-semibold text-emerald-950" : "font-medium text-slate-900"}
+                                                dangerouslySetInnerHTML={{ __html: option.optionText }}
+                                              />
+                                            </div>
+                                          );
+                                        } else {
+                                          return (
+                                            <div key={option.id ?? option.optionText} className="rounded-xl border border-slate-200 bg-slate-50/50 p-3 text-sm text-slate-700 flex flex-col justify-between">
+                                              <div className="flex justify-between items-start gap-2">
+                                                <span 
+                                                  className="font-medium text-slate-900 leading-snug"
+                                                  dangerouslySetInnerHTML={{ __html: option.optionText }}
+                                                />
+                                                <span className="text-xs font-bold text-slate-500 whitespace-nowrap bg-slate-100 px-1.5 py-0.5 rounded-lg border border-slate-200/50">{option.scorePercent}%</span>
+                                              </div>
+                                              <div className="w-full h-2 bg-slate-100 rounded-full mt-3 overflow-hidden border border-slate-200/50">
+                                                <div 
+                                                  className={`h-full rounded-full transition-all duration-500 ${option.scorePercent > 0 ? "bg-teal-500" : "bg-slate-300"}`} 
+                                                  style={{ width: `${option.scorePercent}%` }} 
+                                                />
+                                              </div>
+                                            </div>
+                                          );
+                                        }
+                                      });
+                                    })()}
                                   </div>
                                 </div>
                               </td>
@@ -586,8 +685,22 @@ export default function QuestionsPage() {
                           ) : null}
                           {expanded && question.type === "TEXT" ? (
                             <tr>
-                              <td colSpan={3} className="bg-slate-50 px-4 py-4">
+                              <td colSpan={4} className="bg-slate-50 px-4 py-4">
                                 <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                                  {question.imageUrl && (
+                                    <div className="mb-4">
+                                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                                        Question Image
+                                      </p>
+                                      <div className="mt-2">
+                                        <img
+                                          src={question.imageUrl.startsWith("http") ? question.imageUrl : `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000"}${question.imageUrl}`}
+                                          alt="Question context"
+                                          className="max-h-48 rounded-xl object-contain border border-slate-200"
+                                        />
+                                      </div>
+                                    </div>
+                                  )}
                                   <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
                                     Accepted Answers
                                   </p>

@@ -8,8 +8,11 @@ import {
   beginTest,
   enrollInTest,
   getStudentTests,
+  getStudentAttemptReview,
   type StudentTestSummary
 } from "@/lib/api/student";
+import { AttemptDetailDrawer } from "@/components/teacher/AttemptDetailDrawer";
+import type { AttemptDetail } from "@/lib/api/results";
 
 function formatDateTime(value: string): string {
   const date = new Date(value);
@@ -67,6 +70,27 @@ export default function StudentTestsPage() {
   const [enrollSubmitting, setEnrollSubmitting] = useState(false);
 
   const [beginLoadingId, setBeginLoadingId] = useState<string | null>(null);
+
+  // Review states
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [reviewLoading, setReviewLoading] = useState(false);
+  const [reviewError, setReviewError] = useState<string | null>(null);
+  const [selectedAttempt, setSelectedAttempt] = useState<AttemptDetail | null>(null);
+
+  const handleViewReview = async (attemptId: string) => {
+    setDrawerOpen(true);
+    setReviewLoading(true);
+    setReviewError(null);
+    setSelectedAttempt(null);
+    try {
+      const detail = await getStudentAttemptReview(attemptId);
+      setSelectedAttempt(detail);
+    } catch (err: any) {
+      setReviewError(getApiErrorMessage(err, "Unable to load review details."));
+    } finally {
+      setReviewLoading(false);
+    }
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -227,23 +251,24 @@ export default function StudentTestsPage() {
         ) : (
           <div className="grid gap-3">
             {enrolledTests.map((test) => {
-              const hasAttempt = Boolean(test.attempt);
-              const isCompleted = Boolean(test.attempt?.isSubmitted);
+              const attempts = test.attempts || [];
+              const activeAttempt = attempts.find((a) => !a.isSubmitted) || null;
+              const completedAttempts = attempts.filter((a) => a.isSubmitted) || [];
+              const hasAttempt = attempts.length > 0;
+              
+              const resumable = activeAttempt && (activeAttempt.timeRemainingSeconds ?? 0) > 0;
               const inActiveWindow = isBetween(test.startTime, test.endTime);
-              const resumable =
-                Boolean(test.attempt) &&
-                !test.attempt!.isSubmitted &&
-                (test.attempt?.timeRemainingSeconds ?? 0) > 0;
+              const canStartNewAttempt = !activeAttempt && inActiveWindow && (test.infiniteTries || completedAttempts.length === 0);
 
               return (
-                <article key={test.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                <article key={test.id} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                       <h3 className="text-lg font-semibold text-slate-900">{test.title}</h3>
                       <p className="mt-1 text-sm text-slate-600">
                         {formatDateTime(test.startTime)} - {formatDateTime(test.endTime)}
                       </p>
-                      <p className="mt-1 text-sm text-slate-500">Total marks: {test.totalMarks}</p>
+                      <p className="mt-1 text-sm text-slate-500 font-medium">Total marks: {test.totalMarks}</p>
                     </div>
 
                     <div className="flex flex-col items-start gap-2 sm:items-end">
@@ -253,41 +278,67 @@ export default function StudentTestsPage() {
                         </span>
                       ) : null}
 
-                      {isCompleted ? (
-                        <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-900">
-                          Completed - Score: {test.attempt?.score ?? 0}/{test.totalMarks}
-                        </span>
-                      ) : null}
-
                       {resumable ? (
                         <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-900">
-                          Resumed
+                          Active Attempt In Progress
                         </span>
                       ) : null}
 
-                      {inActiveWindow && !isCompleted ? (
+                      {activeAttempt && !resumable && (
+                        <span className="rounded-full border border-rose-200 bg-rose-50 px-3 py-1 text-xs font-semibold text-rose-900">
+                          Attempt Expired
+                        </span>
+                      )}
+
+                      {canStartNewAttempt ? (
                         <button
                           type="button"
-                          onClick={() => {
-                            if (test.attempt?.id) {
-                              router.push(`/tests/${test.attempt.id}`);
-                              return;
-                            }
-
-                            void beginAttempt(test.enrollmentId);
-                          }}
+                          onClick={() => void beginAttempt(test.enrollmentId)}
                           disabled={beginLoadingId === test.enrollmentId}
                           className="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
                         >
                           {beginLoadingId === test.enrollmentId
                             ? "Starting..."
-                            : test.attempt?.id
-                            ? "Resume Test"
+                            : completedAttempts.length > 0
+                            ? "Retake Test"
                             : "Begin Test"}
+                        </button>
+                      ) : activeAttempt ? (
+                        <button
+                          type="button"
+                          onClick={() => router.push(`/tests/${activeAttempt.id}`)}
+                          className="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800"
+                        >
+                          Resume Test
                         </button>
                       ) : null}
                     </div>
                   </div>
+
+                  {completedAttempts.length > 0 && (
+                    <div className="mt-4 border-t border-slate-100 pt-3">
+                      <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-400">Attempts History</p>
+                      <div className="mt-2 space-y-2">
+                        {completedAttempts.map((att, idx) => (
+                          <div key={att.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2 text-sm">
+                            <span className="font-semibold text-slate-700">Attempt #{idx + 1}</span>
+                            <div className="flex items-center gap-3">
+                              <span className="font-medium text-slate-900">Score: {att.score ?? 0} / {test.totalMarks}</span>
+                              {test.resultsReveal && (
+                                <button
+                                  type="button"
+                                  onClick={() => void handleViewReview(att.id)}
+                                  className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 hover:text-slate-900"
+                                >
+                                  View Details
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </article>
               );
             })}
@@ -349,6 +400,17 @@ export default function StudentTestsPage() {
           </div>
         </div>
       ) : null}
+
+      <AttemptDetailDrawer
+        open={drawerOpen}
+        loading={reviewLoading}
+        error={reviewError}
+        attempt={selectedAttempt}
+        onClose={() => {
+          setDrawerOpen(false);
+          setSelectedAttempt(null);
+        }}
+      />
     </div>
   );
 }

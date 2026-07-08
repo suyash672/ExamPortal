@@ -1,5 +1,7 @@
 import { PrismaClient } from "@prisma/client";
 import type { NextFunction, Request, Response } from "express";
+import fs from "fs";
+import path from "path";
 import { AppError } from "../lib/AppError";
 import { createQuestionRecord, questionInclude, replaceQuestionRecord } from "../lib/question.persistence";
 
@@ -81,7 +83,7 @@ export async function getQuestions(
         deletedAt: { isSet: false }
       },
       include: questionInclude(),
-      orderBy: { createdAt: "desc" }
+      orderBy: { createdAt: "asc" }
     });
 
     res.status(200).json(questions);
@@ -344,6 +346,40 @@ export async function bulkSaveQuestions(
     });
 
     res.status(200).json({ message: "Bulk save completed successfully" });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function uploadQuestionImage(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    if (!req.user) {
+      throw new AppError("Unauthorized", 401);
+    }
+
+    if (!req.file?.buffer) {
+      throw new AppError("No image file provided", 400);
+    }
+
+    const file = req.file;
+    const fileExt = path.extname(file.originalname).toLowerCase();
+    
+    if (![".png", ".jpg", ".jpeg", ".gif", ".webp"].includes(fileExt)) {
+      throw new AppError("Only image files are allowed (.png, .jpg, .jpeg, .gif, .webp)", 400);
+    }
+
+    const filename = `question-${Date.now()}-${Math.random().toString(36).substring(2, 8)}${fileExt}`;
+    const targetPath = path.join(__dirname, "../../uploads/questions", filename);
+
+    fs.writeFileSync(targetPath, file.buffer);
+
+    res.status(200).json({
+      imageUrl: `/uploads/questions/${filename}`
+    });
   } catch (error) {
     next(error);
   }
