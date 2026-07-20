@@ -61,9 +61,6 @@ async function fetchSubmittedResults(testId: string) {
   const enrollments = await prisma.enrollment.findMany({
     where: {
       testId,
-      test: {
-        saveAttempts: true
-      },
       attempts: {
         some: {
           isSubmitted: true
@@ -117,9 +114,6 @@ async function fetchAllResults(testId: string) {
   const enrollments = await prisma.enrollment.findMany({
     where: {
       testId,
-      test: {
-        saveAttempts: true
-      },
       attempts: {
         some: {}
       }
@@ -204,6 +198,194 @@ export async function getTestResults(
   }
 }
 
+export async function calculateScoreCard(attemptId: string, studentId: string, testId: string) {
+  const test = await prisma.test.findUnique({
+    where: { id: testId },
+    include: {
+      testQbRules: {
+        include: {
+          questionBank: {
+            include: {
+              module: true
+            }
+          }
+        }
+      }
+    }
+  });
+
+  if (!test) return [];
+
+  const subjectId = test.testQbRules[0]?.questionBank?.module?.subjectId;
+  const marksByQbId = new Map(test.testQbRules.map(r => [r.qbId, r.marksPerQuestion]));
+
+  const currentAttempt = await prisma.attempt.findUnique({
+    where: { id: attemptId },
+    include: {
+      questions: {
+        include: {
+          question: {
+            include: {
+              questionBank: {
+                include: {
+                  module: true
+                }
+              }
+            }
+          },
+          answer: true
+        }
+      }
+    }
+  });
+
+  if (!currentAttempt) return [];
+
+  const currentMap = new Map<string, { scored: number; max: number; moduleName: string; type: string }>();
+
+  for (const item of currentAttempt.questions) {
+    const qb = item.question.questionBank;
+    if (!qb) continue;
+    const key = `${qb.module.name}-${qb.type}`;
+    const maxMarks = marksByQbId.get(item.question.qbId) ?? 0;
+    const scored = item.answer?.marksAwarded ?? 0;
+
+    const existing = currentMap.get(key) || { scored: 0, max: 0, moduleName: qb.module.name, type: qb.type };
+    currentMap.set(key, {
+      scored: existing.scored + scored,
+      max: existing.max + maxMarks,
+      moduleName: existing.moduleName,
+      type: existing.type
+    });
+  }
+
+  const testAttempts = await prisma.attempt.findMany({
+    where: {
+      enrollment: { testId },
+      isSubmitted: true
+    },
+    include: {
+      questions: {
+        include: {
+          question: true,
+          answer: true
+        }
+      }
+    }
+  });
+
+  const classSums = new Map<string, { sumPercent: number; count: number }>();
+  for (const att of testAttempts) {
+    const attScores = new Map<string, { scored: number; max: number }>();
+    for (const item of att.questions) {
+      const qbRule = test.testQbRules.find(r => r.qbId === item.question.qbId);
+      if (!qbRule) continue;
+      const qb = qbRule.questionBank;
+      const key = `${qb.module.name}-${qb.type}`;
+      const maxMarks = marksByQbId.get(item.question.qbId) ?? 0;
+      const scored = item.answer?.marksAwarded ?? 0;
+
+      const val = attScores.get(key) || { scored: 0, max: 0 };
+      attScores.set(key, { scored: val.scored + scored, max: val.max + maxMarks });
+    }
+
+    for (const [key, val] of attScores.entries()) {
+      if (val.max > 0) {
+        const pct = (val.scored / val.max) * 100;
+        const sums = classSums.get(key) || { sumPercent: 0, count: 0 };
+        classSums.set(key, { sumPercent: sums.sumPercent + pct, count: sums.count + 1 });
+      }
+    }
+  }
+
+  const historicalSums = new Map<string, { sumPercent: number; count: number }>();
+  if (subjectId) {
+    const historicalAttempts = await prisma.attempt.findMany({
+      where: {
+        enrollment: {
+          studentId,
+          test: {
+            testQbRules: {
+              some: {
+                questionBank: {
+                  module: { subjectId }
+                }
+              }
+            }
+          }
+        },
+        isSubmitted: true
+      },
+      include: {
+        questions: {
+          include: {
+            question: {
+              include: {
+                questionBank: {
+                  include: {
+                    module: true
+                  }
+                }
+              }
+            },
+            answer: true
+          }
+        },
+        enrollment: {
+          include: {
+            test: {
+              include: {
+                testQbRules: true
+              }
+            }
+          }
+        }
+      }
+    });
+
+    for (const att of historicalAttempts) {
+      const histMarksByQbId = new Map(att.enrollment.test.testQbRules.map(r => [r.qbId, r.marksPerQuestion]));
+      const attScores = new Map<string, { scored: number; max: number }>();
+
+      for (const item of att.questions) {
+        const qb = item.question.questionBank;
+        if (!qb) continue;
+        const key = `${qb.module.name}-${qb.type}`;
+        const maxMarks = histMarksByQbId.get(item.question.qbId) ?? 0;
+        const scored = item.answer?.marksAwarded ?? 0;
+
+        const val = attScores.get(key) || { scored: 0, max: 0 };
+        attScores.set(key, { scored: val.scored + scored, max: val.max + maxMarks });
+      }
+
+      for (const [key, val] of attScores.entries()) {
+        if (val.max > 0) {
+          const pct = (val.scored / val.max) * 100;
+          const sums = historicalSums.get(key) || { sumPercent: 0, count: 0 };
+          historicalSums.set(key, { sumPercent: sums.sumPercent + pct, count: sums.count + 1 });
+        }
+      }
+    }
+  }
+
+  const sections: any[] = [];
+  for (const [key, currentVal] of currentMap.entries()) {
+    const classAvgVal = classSums.get(key);
+    const histAvgVal = historicalSums.get(key);
+
+    sections.push({
+      moduleName: currentVal.moduleName,
+      type: currentVal.type,
+      studentScore: currentVal.scored,
+      maxMarks: currentVal.max,
+      classAvg: classAvgVal ? Math.round(classAvgVal.sumPercent / classAvgVal.count) : null,
+      historicalAvg: histAvgVal ? Math.round(histAvgVal.sumPercent / histAvgVal.count) : null
+    });
+  }
+
+  return sections;
+}
+
 export async function getAttemptDetail(
   req: Request,
   res: Response,
@@ -250,10 +432,17 @@ export async function getAttemptDetail(
                 qbId: true,
                 type: true,
                 questionText: true,
+                questionBank: {
+                  select: {
+                    name: true,
+                    type: true
+                  }
+                },
                 mcqOptions: {
                   select: {
                     id: true,
                     optionText: true,
+                    imageUrl: true,
                     scorePercent: true
                   }
                 },
@@ -286,6 +475,142 @@ export async function getAttemptDetail(
       ownedTest.rules.map((rule) => [rule.qbId, rule.marksPerQuestion])
     );
 
+    const scorecard = await calculateScoreCard(attempt.id, attempt.enrollment.student.id, ownedTest.id);
+
+    // Multi-attempt analytics for this student
+    const studentAllAttempts = await prisma.attempt.findMany({
+      where: {
+        enrollment: {
+          testId: ownedTest.id,
+          studentId: attempt.enrollment.student.id
+        }
+      },
+      orderBy: { startedAt: "asc" },
+      select: {
+        id: true,
+        score: true,
+        startedAt: true,
+        submittedAt: true,
+        isSubmitted: true,
+        isBlocked: true
+      }
+    });
+
+    const submittedStudentAttempts = studentAllAttempts.filter((a) => a.isSubmitted);
+    const totalAttemptsCount = studentAllAttempts.length;
+    const submittedScores = submittedStudentAttempts.map((a) => a.score ?? 0);
+    const bestScore = submittedScores.length > 0 ? Math.max(...submittedScores) : (attempt.score ?? 0);
+    const avgScoreSum = submittedScores.reduce((a, b) => a + b, 0);
+    const averageScore = submittedScores.length > 0 ? Math.round((avgScoreSum / submittedScores.length) * 10) / 10 : (attempt.score ?? 0);
+
+    const attemptsList = studentAllAttempts.map((a, idx) => ({
+      id: a.id,
+      attemptNumber: idx + 1,
+      score: a.score,
+      startedAt: a.startedAt,
+      submittedAt: a.submittedAt,
+      isSubmitted: a.isSubmitted,
+      isBlocked: a.isBlocked ?? false
+    }));
+
+    // Calculate Module-wise & Bank-wise statistics for this student attempt
+    const fullTestInfo = await prisma.test.findUnique({
+      where: { id: ownedTest.id },
+      include: {
+        testQbRules: {
+          include: {
+            questionBank: {
+              include: {
+                module: {
+                  include: {
+                    subject: true
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    });
+
+    const bankAcc = new Map<string, {
+      qbId: string;
+      qbName: string;
+      difficulty: string;
+      moduleName: string;
+      questionsAttempted: number;
+      marksPerQuestion: number;
+      totalMarks: number;
+      earnedScore: number;
+    }>();
+
+    const moduleAcc = new Map<string, {
+      moduleId: string;
+      moduleName: string;
+      subjectName: string;
+      questionsAttempted: number;
+      totalMarks: number;
+      earnedScore: number;
+    }>();
+
+    if (fullTestInfo) {
+      for (const rule of fullTestInfo.testQbRules) {
+        const qb = rule.questionBank;
+        const mod = qb.module;
+        const qbMaxMarks = rule.questionsToPick * rule.marksPerQuestion;
+
+        if (!bankAcc.has(qb.id)) {
+          bankAcc.set(qb.id, {
+            qbId: qb.id,
+            qbName: qb.name,
+            difficulty: qb.type || "easy",
+            moduleName: mod.name,
+            questionsAttempted: rule.questionsToPick,
+            marksPerQuestion: rule.marksPerQuestion,
+            totalMarks: qbMaxMarks,
+            earnedScore: 0
+          });
+        }
+
+        if (!moduleAcc.has(mod.id)) {
+          moduleAcc.set(mod.id, {
+            moduleId: mod.id,
+            moduleName: mod.name,
+            subjectName: mod.subject.name,
+            questionsAttempted: rule.questionsToPick,
+            totalMarks: qbMaxMarks,
+            earnedScore: 0
+          });
+        } else {
+          const m = moduleAcc.get(mod.id)!;
+          m.questionsAttempted += rule.questionsToPick;
+          m.totalMarks += qbMaxMarks;
+        }
+      }
+
+      for (const item of attempt.questions) {
+        const qbId = item.question.qbId;
+        const earned = item.answer?.marksAwarded ?? 0;
+        if (bankAcc.has(qbId)) {
+          bankAcc.get(qbId)!.earnedScore += earned;
+        }
+        const qb = fullTestInfo.testQbRules.find((r) => r.qbId === qbId)?.questionBank;
+        if (qb && moduleAcc.has(qb.moduleId)) {
+          moduleAcc.get(qb.moduleId)!.earnedScore += earned;
+        }
+      }
+    }
+
+    const studentModuleStats = Array.from(moduleAcc.values()).map((m) => ({
+      ...m,
+      accuracyPercent: m.totalMarks > 0 ? Math.round((m.earnedScore / m.totalMarks) * 100) : 0
+    }));
+
+    const studentBankStats = Array.from(bankAcc.values()).map((b) => ({
+      ...b,
+      accuracyPercent: b.totalMarks > 0 ? Math.round((b.earnedScore / b.totalMarks) * 100) : 0
+    }));
+
     res.status(200).json({
       id: attempt.id,
       testId: ownedTest.id,
@@ -298,6 +623,15 @@ export async function getAttemptDetail(
       score: attempt.score,
       totalMarks: ownedTest.totalMarks,
       activities: attempt.activities || [],
+      scorecard,
+      studentSummary: {
+        totalAttemptsCount,
+        bestScore,
+        averageScore,
+        attemptsList
+      },
+      moduleStats: studentModuleStats,
+      bankStats: studentBankStats,
       student: {
         id: attempt.enrollment.student.id,
         name: attempt.enrollment.student.name,
@@ -343,9 +677,13 @@ export async function getAttemptDetail(
             id: item.question.id,
             text: item.question.questionText,
             type: item.question.type,
+            qbId: item.question.qbId,
+            qbName: (item.question as any).questionBank?.name ?? "Default",
+            qbType: (item.question as any).questionBank?.type ?? "easy",
             mcqOptions: item.question.mcqOptions.map((option) => ({
               id: option.id,
               optionText: option.optionText,
+              imageUrl: option.imageUrl,
               isCorrect: option.scorePercent === 100
             })),
             acceptedAnswers: item.question.acceptedAnswers.map((answer) => answer.answerText)

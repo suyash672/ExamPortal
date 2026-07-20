@@ -39,6 +39,7 @@ export type CreateTestPayload = {
   endTime: string;
   durationMinutes: number;
   qbRules: TestQbRulePayload[];
+  isLocked?: boolean;
   useFullscreen?: boolean;
   logActivities?: boolean;
   preventCopyPaste?: boolean;
@@ -120,4 +121,71 @@ export async function createTest(payload: CreateTestPayload): Promise<CreatedTes
 
 export async function deleteTest(testId: string): Promise<void> {
   await api.delete(`/api/tests/${testId}`);
+}
+
+export async function releaseTestResults(testId: string): Promise<void> {
+  await api.post(`/api/tests/${testId}/release-results`);
+}
+
+export type ModuleStatItem = {
+  moduleId: string;
+  moduleName: string;
+  subjectName: string;
+  questionsPicked: number;
+  totalMarks: number;
+  averageScore: number;
+  accuracyPercent: number;
+};
+
+export type BankStatItem = {
+  qbId: string;
+  qbName: string;
+  difficulty: string;
+  moduleName: string;
+  questionsPicked: number;
+  marksPerQuestion: number;
+  totalMarks: number;
+  averageScore: number;
+  accuracyPercent: number;
+};
+
+export type TestStatistics = {
+  totalEnrollments: number;
+  attemptedCount: number;
+  attemptingCount: number;
+  notAttemptedCount: number;
+  averageScore: number;
+  highestScore: number;
+  lowestScore: number;
+  totalMarks: number;
+  moduleStats?: ModuleStatItem[];
+  bankStats?: BankStatItem[];
+};
+
+export type UpdateTestSettingsPayload = {
+  title?: string;
+  enrollmentKey?: string | null;
+  startTime?: string;
+  endTime?: string;
+  durationMinutes?: number;
+  isLocked?: boolean;
+  useFullscreen?: boolean;
+  logActivities?: boolean;
+  preventCopyPaste?: boolean;
+  saveAttempts?: boolean;
+  infiniteTries?: boolean;
+  resultsReveal?: boolean;
+};
+
+export async function getTestStatistics(testId: string): Promise<TestStatistics> {
+  const response = await api.get<TestStatistics>(`/api/tests/${testId}/statistics`);
+  return response.data;
+}
+
+export async function updateTestSettings(
+  testId: string,
+  payload: UpdateTestSettingsPayload
+): Promise<TestListItem> {
+  const response = await api.patch<TestListItem>(`/api/tests/${testId}/settings`, payload);
+  return response.data;
 }

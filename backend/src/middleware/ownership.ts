@@ -97,20 +97,38 @@ export async function requireQbOwnership(
     return;
   }
 
-  const qb = await prisma.questionBank.findUnique({
-    where: { id: qbId },
-    select: {
-      module: {
-        select: {
-          subject: {
-            select: {
-              teacherId: true
+  let qb = null;
+  if (qbId.match(/^[a-fA-F0-9]{24}$/)) {
+    qb = await prisma.questionBank.findUnique({
+      where: { id: qbId },
+      select: {
+        module: {
+          select: {
+            subject: {
+              select: {
+                teacherId: true
+              }
             }
           }
         }
       }
-    }
-  });
+    });
+  } else {
+    qb = await prisma.questionBank.findFirst({
+      where: { name: qbId },
+      select: {
+        module: {
+          select: {
+            subject: {
+              select: {
+                teacherId: true
+              }
+            }
+          }
+        }
+      }
+    });
+  }
 
   if (!qb || qb.module.subject.teacherId !== req.user.id) {
     res.status(403).json({ message: "Forbidden" });

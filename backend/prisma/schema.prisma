@@ -110,6 +110,7 @@ model McqOption {
   questionId             String                @db.ObjectId
   question               Question              @relation(fields: [questionId], references: [id])
   optionText             String
+  imageUrl               String?
   scorePercent           Int
   attemptAnswerSelections AttemptAnswerOption[]
 }

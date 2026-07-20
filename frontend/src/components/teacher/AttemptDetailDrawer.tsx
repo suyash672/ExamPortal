@@ -1,6 +1,8 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import type { AttemptDetail } from "@/lib/api/results";
+import { AttemptScoreCard } from "@/components/shared/AttemptScoreCard";
 
 type AttemptDetailDrawerProps = {
   open: boolean;
@@ -25,6 +27,14 @@ export function AttemptDetailDrawer({
   onToggleBlock,
   onClose
 }: AttemptDetailDrawerProps) {
+  const [activeTab, setActiveTab] = useState<"scorecard" | "review">("scorecard");
+
+  useEffect(() => {
+    if (open) {
+      setActiveTab("scorecard");
+    }
+  }, [open]);
+
   return (
     <div
       className={`fixed inset-0 z-50 transition ${
@@ -113,12 +123,189 @@ export function AttemptDetailDrawer({
               </div>
             ) : (
               <div className="space-y-4">
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                  <p className="text-sm text-slate-600">
-                    Score: <span className="font-semibold text-slate-900">{attempt.score ?? 0}</span> /{" "}
-                    <span className="font-semibold text-slate-900">{attempt.totalMarks}</span>
-                  </p>
+                <div className="flex border-b border-slate-200 mb-4 no-print">
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab("scorecard")}
+                    className={`flex-1 py-3 text-sm font-semibold border-b-2 transition ${
+                      activeTab === "scorecard"
+                        ? "border-slate-900 text-slate-900"
+                        : "border-transparent text-slate-500 hover:text-slate-900"
+                    }`}
+                  >
+                    📊 Score Card
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab("review")}
+                    className={`flex-1 py-3 text-sm font-semibold border-b-2 transition ${
+                      activeTab === "review"
+                        ? "border-slate-900 text-slate-900"
+                        : "border-transparent text-slate-500 hover:text-slate-900"
+                    }`}
+                  >
+                    📝 Questions Review
+                  </button>
                 </div>
+
+                {activeTab === "scorecard" ? (
+                  <div className="space-y-6">
+                    {/* Multi-Attempt Summary Card */}
+                    {attempt.studentSummary && (
+                      <div className="rounded-2xl border border-teal-200 bg-teal-50/50 p-4 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold uppercase tracking-wider text-teal-900">
+                            🔄 Student Multi-Attempt Statistics
+                          </span>
+                          <span className="inline-flex rounded-full bg-teal-100 px-2.5 py-0.5 text-xs font-bold text-teal-800">
+                            {attempt.studentSummary.totalAttemptsCount} Attempt(s)
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-3 gap-3">
+                          <div className="rounded-xl border border-teal-200 bg-white p-3">
+                            <p className="text-[10px] font-bold uppercase text-slate-500">🏆 Best Score</p>
+                            <p className="text-xl font-extrabold text-teal-900 mt-0.5">
+                              {attempt.studentSummary.bestScore} / {attempt.totalMarks}
+                            </p>
+                          </div>
+                          <div className="rounded-xl border border-sky-200 bg-white p-3">
+                            <p className="text-[10px] font-bold uppercase text-slate-500">📊 Average Score</p>
+                            <p className="text-xl font-extrabold text-sky-900 mt-0.5">
+                              {attempt.studentSummary.averageScore} / {attempt.totalMarks}
+                            </p>
+                          </div>
+                          <div className="rounded-xl border border-slate-200 bg-white p-3">
+                            <p className="text-[10px] font-bold uppercase text-slate-500">🎯 This Attempt</p>
+                            <p className="text-xl font-extrabold text-slate-900 mt-0.5">
+                              {attempt.score ?? 0} / {attempt.totalMarks}
+                            </p>
+                          </div>
+                        </div>
+
+                        {attempt.studentSummary.attemptsList.length > 1 && (
+                          <div className="space-y-1.5 pt-1">
+                            <p className="text-[11px] font-bold text-teal-950">Attempt History & Score Switcher:</p>
+                            <div className="flex flex-wrap gap-2">
+                              {attempt.studentSummary.attemptsList.map((att) => (
+                                <button
+                                  key={att.id}
+                                  type="button"
+                                  onClick={() => onRefresh && onRefresh()}
+                                  className={`rounded-lg border px-2.5 py-1 text-xs font-bold transition cursor-pointer ${
+                                    att.id === attempt.id
+                                      ? "bg-teal-700 text-white border-teal-800 shadow-xs"
+                                      : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
+                                  }`}
+                                >
+                                  Attempt #{att.attemptNumber}: {att.score ?? 0} marks
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Tier 2: Module-Wise Performance */}
+                    {attempt.moduleStats && attempt.moduleStats.length > 0 && (
+                      <div className="rounded-2xl border border-slate-200 bg-white p-4 space-y-3">
+                        <p className="text-xs font-bold uppercase tracking-wider text-slate-700">📘 Student Module-Wise Breakdown</p>
+                        <div className="overflow-x-auto rounded-xl border border-slate-200">
+                          <table className="min-w-full divide-y divide-slate-200 text-xs">
+                            <thead className="bg-slate-50">
+                              <tr>
+                                <th className="px-3 py-2 text-left font-bold text-slate-600">Module</th>
+                                <th className="px-3 py-2 text-left font-bold text-slate-600">Score</th>
+                                <th className="px-3 py-2 text-left font-bold text-slate-600">Accuracy</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                              {attempt.moduleStats.map((mod) => (
+                                <tr key={mod.moduleId}>
+                                  <td className="px-3 py-2 font-bold text-slate-900">{mod.moduleName}</td>
+                                  <td className="px-3 py-2 font-semibold text-teal-800">{mod.earnedScore} / {mod.totalMarks}</td>
+                                  <td className="px-3 py-2">
+                                    <div className="flex items-center gap-1.5">
+                                      <div className="w-16 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                                        <div
+                                          className="h-full bg-teal-500 rounded-full"
+                                          style={{ width: `${Math.min(100, mod.accuracyPercent)}%` }}
+                                        />
+                                      </div>
+                                      <span className="font-bold text-slate-700 text-[11px]">{mod.accuracyPercent}%</span>
+                                    </div>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Tier 3: Question Bank & Difficulty Breakdown */}
+                    {attempt.bankStats && attempt.bankStats.length > 0 && (
+                      <div className="rounded-2xl border border-slate-200 bg-white p-4 space-y-3">
+                        <p className="text-xs font-bold uppercase tracking-wider text-slate-700">🎯 Question Bank & Difficulty Breakdown</p>
+                        <div className="overflow-x-auto rounded-xl border border-slate-200">
+                          <table className="min-w-full divide-y divide-slate-200 text-xs">
+                            <thead className="bg-slate-50">
+                              <tr>
+                                <th className="px-3 py-2 text-left font-bold text-slate-600">Question Bank</th>
+                                <th className="px-3 py-2 text-left font-bold text-slate-600">Difficulty</th>
+                                <th className="px-3 py-2 text-left font-bold text-slate-600">Score</th>
+                                <th className="px-3 py-2 text-left font-bold text-slate-600">Accuracy</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                              {attempt.bankStats.map((bank) => (
+                                <tr key={bank.qbId}>
+                                  <td className="px-3 py-2 font-bold text-slate-900">{bank.qbName}</td>
+                                  <td className="px-3 py-2">
+                                    <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-700 capitalize">
+                                      {bank.difficulty}
+                                    </span>
+                                  </td>
+                                  <td className="px-3 py-2 font-semibold text-teal-800">{bank.earnedScore} / {bank.totalMarks}</td>
+                                  <td className="px-3 py-2">
+                                    <div className="flex items-center gap-1.5">
+                                      <div className="w-16 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                                        <div
+                                          className="h-full bg-teal-500 rounded-full"
+                                          style={{ width: `${Math.min(100, bank.accuracyPercent)}%` }}
+                                        />
+                                      </div>
+                                      <span className="font-bold text-slate-700 text-[11px]">{bank.accuracyPercent}%</span>
+                                    </div>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+
+                    <AttemptScoreCard
+                      scorecard={attempt.scorecard}
+                      studentName={attempt.student.name}
+                      studentEmail={attempt.student.email}
+                      testTitle={attempt.testTitle}
+                      score={attempt.score}
+                      totalMarks={attempt.totalMarks}
+                      startedAt={attempt.startedAt}
+                      submittedAt={attempt.submittedAt}
+                    />
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                      <p className="text-sm text-slate-600">
+                        Score: <span className="font-semibold text-slate-900">{attempt.score ?? 0}</span> /{" "}
+                        <span className="font-semibold text-slate-900">{attempt.totalMarks}</span>
+                      </p>
+                    </div>
 
                 {attempt.activities && attempt.activities.length > 0 && (
                   <div className="rounded-2xl border border-rose-200 bg-rose-50/50 p-4">
@@ -204,7 +391,18 @@ export function AttemptDetailDrawer({
                                 className={`rounded-xl border px-3 py-2 text-sm ${optionClass}`}
                               >
                                 <div className="flex items-center justify-between gap-2">
-                                  <span>{option.optionText}</span>
+                                  <div className="flex flex-col gap-1.5">
+                                    <span>{option.optionText}</span>
+                                    {option.imageUrl && (
+                                      <div className="max-w-full">
+                                        <img
+                                          src={option.imageUrl.startsWith("http") ? option.imageUrl : `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000"}${option.imageUrl}`}
+                                          alt={`Option ${option.optionText}`}
+                                          className="max-h-20 rounded-lg object-contain border border-slate-200 bg-white"
+                                        />
+                                      </div>
+                                    )}
+                                  </div>
                                   <div className="flex items-center gap-1">
                                     {isCorrect ? (
                                       <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-800">
@@ -257,6 +455,8 @@ export function AttemptDetailDrawer({
                     </article>
                   );
                 })}
+                  </div>
+                )}
               </div>
             )}
           </div>

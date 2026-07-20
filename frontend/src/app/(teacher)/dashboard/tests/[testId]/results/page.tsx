@@ -14,7 +14,7 @@ import {
   type AttemptDetail,
   type TestResultItem
 } from "@/lib/api/results";
-import { getTestById } from "@/lib/api/tests";
+import { getTestById, releaseTestResults, type TestDetails } from "@/lib/api/tests";
 
 type SortField = "score" | "name";
 
@@ -66,6 +66,8 @@ export default function TestResultsPage() {
   
   const [viewMode, setViewMode] = useState<"list" | "monitor">("list");
   const [autoRefresh, setAutoRefresh] = useState(false);
+  const [testDetails, setTestDetails] = useState<TestDetails | null>(null);
+  const [releasing, setReleasing] = useState(false);
 
   const loadData = useCallback(async () => {
     if (!testId) {
@@ -81,6 +83,7 @@ export default function TestResultsPage() {
       const [test, resultRows] = await Promise.all([getTestById(testId), getTestResults(testId)]);
       setTestTitle(test.title);
       setTotalEnrolled(test.enrollmentCount);
+      setTestDetails(test);
       setResults(resultRows);
     } catch (apiError: any) {
       setError(getApiErrorMessage(apiError, "Unable to load results"));
@@ -101,6 +104,7 @@ export default function TestResultsPage() {
         .then(([test, resultRows]) => {
           setTestTitle(test.title);
           setTotalEnrolled(test.enrollmentCount);
+          setTestDetails(test);
           setResults(resultRows);
         })
         .catch(() => {});
@@ -230,6 +234,32 @@ export default function TestResultsPage() {
     }
   };
 
+  const handleReleaseResults = async () => {
+    if (!testId || !testDetails) return;
+
+    const now = new Date();
+    const endTime = new Date(testDetails.endTime);
+    
+    let confirmMsg = "Are you sure you want to release exam results to students?";
+    if (now < endTime) {
+      confirmMsg = "Exam time hasn't finished yet. Are you sure you want to release exam results now?";
+    }
+
+    const confirmed = window.confirm(confirmMsg);
+    if (!confirmed) return;
+
+    setReleasing(true);
+    try {
+      await releaseTestResults(testId);
+      showToast("Results successfully released to students!");
+      void loadData();
+    } catch (apiError: any) {
+      showToast(getApiErrorMessage(apiError, "Failed to release results"), "error");
+    } finally {
+      setReleasing(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
@@ -248,6 +278,21 @@ export default function TestResultsPage() {
         </div>
 
         <div className="flex items-center gap-3">
+          {testDetails && (
+            <button
+              type="button"
+              onClick={handleReleaseResults}
+              disabled={releasing || testDetails.resultsReveal}
+              className={`inline-flex items-center justify-center gap-1.5 rounded-xl px-4 py-2.5 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                testDetails.resultsReveal
+                  ? "bg-emerald-50 text-emerald-800 border border-emerald-200"
+                  : "bg-teal-600 text-white hover:bg-teal-700"
+              }`}
+            >
+              {testDetails.resultsReveal ? "✅ Results Released" : releasing ? "Releasing..." : "📢 Release Results"}
+            </button>
+          )}
+
           <button
             type="button"
             onClick={() => setViewMode((prev) => (prev === "list" ? "monitor" : "list"))}

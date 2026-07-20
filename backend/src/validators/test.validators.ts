@@ -18,6 +18,7 @@ export const createTestSchema = z
     endTime: z.coerce.date(),
     durationMinutes: z.number().int().min(1),
     qbRules: z.array(testQbRuleSchema).min(1),
+    isLocked: z.boolean().default(false),
     useFullscreen: z.boolean().default(false),
     logActivities: z.boolean().default(false),
     preventCopyPaste: z.boolean().default(false),

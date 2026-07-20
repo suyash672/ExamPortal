@@ -3,6 +3,7 @@ import api from "../axios";
 export type McqQuestionOption = {
   id?: string;
   optionText: string;
+  imageUrl?: string | null;
   scorePercent: number;
 };
 
@@ -29,6 +30,7 @@ export type QuestionPayload =
       imageUrl?: string | null;
       options: Array<{
         optionText: string;
+        imageUrl?: string | null;
         scorePercent: number;
       }>;
     }
@@ -109,6 +111,45 @@ export async function uploadQuestionImage(formData: FormData): Promise<{ imageUr
 
 export async function deduplicateQuestions(qbId: string): Promise<{ deleted: number }> {
   const response = await api.post<{ deleted: number }>("/api/questions/deduplicate", { qbId });
+  return response.data;
+}
+
+export type DocxPreviewItem = {
+  tempId: string;
+  num: string;
+  questionText: string;
+  textLines: string[];
+  options: Record<string, string>;
+  answerLetter: string;
+  hasEquation: boolean;
+  suggestedType: "MCQ_TEXT" | "MCQ_IMAGE";
+};
+
+export type DocxPreviewResponse = {
+  success: boolean;
+  totalQuestions: number;
+  pureTextCount: number;
+  equationCount: number;
+  questions: DocxPreviewItem[];
+};
+
+export async function analyzeDocxFile(qbId: string, file: File): Promise<DocxPreviewResponse> {
+  const formData = new FormData();
+  formData.append("file", file);
+  const response = await api.post<DocxPreviewResponse>(`/api/banks/${qbId}/docx-preview`, formData, {
+    headers: { "Content-Type": "multipart/form-data" }
+  });
+  return response.data;
+}
+
+export async function commitDocxImport(
+  qbId: string,
+  questions: Array<DocxPreviewItem & { importType: "MCQ_TEXT" | "MCQ_IMAGE" }>
+): Promise<{ success: boolean; importedCount: number; message: string }> {
+  const response = await api.post<{ success: boolean; importedCount: number; message: string }>(
+    `/api/banks/${qbId}/docx-commit`,
+    { questions }
+  );
   return response.data;
 }
 

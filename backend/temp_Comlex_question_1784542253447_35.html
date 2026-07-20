@@ -1,0 +1,55 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    html, body {
+      overflow: hidden !important;
+      margin: 0;
+      padding: 0;
+      background: transparent;
+    }
+    body {
+      font-family: 'Segoe UI', -apple-system, system-ui, Roboto, sans-serif;
+      padding: 12px;
+      width: 680px;
+    }
+    .card {
+      background: #ffffff;
+      border: 2px solid #e2e8f0;
+      border-radius: 20px;
+      padding: 24px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+      color: #0f172a;
+      overflow: hidden;
+    }
+    .badge {
+      display: inline-block;
+      background: #0f766e;
+      color: #ffffff;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 4px 12px;
+      border-radius: 9999px;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-bottom: 12px;
+    }
+    .question-text {
+      font-size: 17px;
+      line-height: 1.6;
+      font-weight: 600;
+      color: #1e293b;
+    }
+    sub { font-size: 0.75em; vertical-align: sub; }
+    sup { font-size: 0.75em; vertical-align: super; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="badge">Question #36</div>
+    <div class="question-text">Number of FFT Operations in Linear Filtering</b><br>A sequence of length <b>8192</b> is filtered using the <b>Overlap-Save</b> method.<br>Filter length<br>M=129<br>FFT size<br>N=512<br>Each block requires:<br>One FFT of the input block,<br>One frequency-domain multiplication,<br>One IFFT.<br>Ignoring the multiplication cost, approximately how many FFT/IFFT transforms are required?</div>
+  </div>
+</body>
+</html>

@@ -5,12 +5,13 @@ import { useParams, useRouter } from "next/navigation";
 import { Fragment } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { CsvImportTab } from "@/components/teacher/CsvImportTab";
+import { DocxImportTab } from "@/components/teacher/DocxImportTab";
 import { QuestionFormModal } from "@/components/teacher/QuestionFormModal";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { useToast } from "@/components/ui/ToastProvider";
 import { getApiErrorMessage } from "@/lib/apiError";
 import { getModules, type ModuleRecord } from "@/lib/api/modules";
-import { getQuestions, deduplicateQuestions, bulkSaveQuestions, type QuestionRecord, type QuestionPayload, type BulkSavePayload } from "@/lib/api/questions";
+import { getQuestions, deduplicateQuestions, bulkSaveQuestions, type QuestionRecord, type QuestionPayload, type BulkSavePayload, type DocxPreviewResponse, type DocxPreviewItem } from "@/lib/api/questions";
 import { getQuestionBanks, type QuestionBankRecord } from "@/lib/api/questionbanks";
 import { getSubjects, type SubjectRecord } from "@/lib/api/subjects";
 
@@ -54,7 +55,9 @@ export default function QuestionsPage() {
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"questions" | "csv">("questions");
+  const [activeTab, setActiveTab] = useState<"questions" | "csv" | "docx">("questions");
+  const [docxPreviewData, setDocxPreviewData] = useState<DocxPreviewResponse | null>(null);
+  const [docxItems, setDocxItems] = useState<Array<DocxPreviewItem & { importType: "MCQ_TEXT" | "MCQ_IMAGE" }>>([]);
   const [questionModalOpen, setQuestionModalOpen] = useState(false);
   const [editingQuestion, setEditingQuestion] = useState<QuestionRecord | null>(null);
   const [expandedQuestionId, setExpandedQuestionId] = useState<string | null>(null);
@@ -499,12 +502,13 @@ export default function QuestionsPage() {
           <div className="inline-flex rounded-2xl bg-slate-100 p-1">
             {[
               { key: "questions", label: "Questions List" },
+              { key: "docx", label: "📄 Smart DOCX Importer" },
               { key: "csv", label: "Import CSV" }
             ].map((tab) => (
               <button
                 key={tab.key}
                 type="button"
-                onClick={() => setActiveTab(tab.key as "questions" | "csv")}
+                onClick={() => setActiveTab(tab.key as "questions" | "docx" | "csv")}
                 className={`rounded-xl px-4 py-2 text-sm font-medium transition ${
                   activeTab === tab.key ? "bg-white text-slate-900 shadow-sm" : "text-slate-500"
                 }`}
@@ -583,7 +587,11 @@ export default function QuestionsPage() {
                                 onClick={() => setExpandedQuestionId(expanded ? null : question.id)}
                                 className="text-left font-medium text-slate-900 hover:text-[var(--primary)]"
                               >
-                                {expanded ? (
+                                {question.imageUrl || !question.questionText?.trim() ? (
+                                  <span className="inline-flex items-center gap-1.5 font-semibold text-teal-800 bg-teal-50 px-2.5 py-1 rounded-lg border border-teal-200 text-xs">
+                                    🖼️ Preview as Image
+                                  </span>
+                                ) : expanded ? (
                                   <span className="whitespace-pre-wrap block" dangerouslySetInnerHTML={{ __html: question.questionText }} />
                                 ) : (
                                   truncateText(question.questionText, 80)
@@ -650,21 +658,41 @@ export default function QuestionsPage() {
                                             ? "rounded-xl border border-emerald-200 bg-emerald-50/60 px-3 py-2 text-sm text-emerald-950 shadow-sm"
                                             : "rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700";
                                           return (
-                                            <div key={option.id ?? option.optionText} className={className}>
+                                            <div key={option.id ?? option.optionText} className={className + " flex flex-col gap-1"}>
                                               <span 
                                                 className={isCorrect ? "font-semibold text-emerald-950" : "font-medium text-slate-900"}
                                                 dangerouslySetInnerHTML={{ __html: option.optionText }}
                                               />
+                                              {option.imageUrl && (
+                                                <div className="max-w-full mt-1">
+                                                  <img
+                                                    src={option.imageUrl.startsWith("http") ? option.imageUrl : `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000"}${option.imageUrl}`}
+                                                    alt={`Option ${option.optionText}`}
+                                                    className="max-h-20 rounded-lg object-contain border border-slate-200 bg-white"
+                                                  />
+                                                </div>
+                                              )}
                                             </div>
                                           );
                                         } else {
                                           return (
                                             <div key={option.id ?? option.optionText} className="rounded-xl border border-slate-200 bg-slate-50/50 p-3 text-sm text-slate-700 flex flex-col justify-between">
                                               <div className="flex justify-between items-start gap-2">
-                                                <span 
-                                                  className="font-medium text-slate-900 leading-snug"
-                                                  dangerouslySetInnerHTML={{ __html: option.optionText }}
-                                                />
+                                                <div className="flex flex-col gap-1">
+                                                  <span 
+                                                    className="font-medium text-slate-900 leading-snug"
+                                                    dangerouslySetInnerHTML={{ __html: option.optionText }}
+                                                  />
+                                                  {option.imageUrl && (
+                                                    <div className="max-w-full mt-1">
+                                                      <img
+                                                        src={option.imageUrl.startsWith("http") ? option.imageUrl : `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000"}${option.imageUrl}`}
+                                                        alt={`Option ${option.optionText}`}
+                                                        className="max-h-20 rounded-lg object-contain border border-slate-200 bg-white"
+                                                      />
+                                                    </div>
+                                                  )}
+                                                </div>
                                                 <span className="text-xs font-bold text-slate-500 whitespace-nowrap bg-slate-100 px-1.5 py-0.5 rounded-lg border border-slate-200/50">{option.scorePercent}%</span>
                                               </div>
                                               <div className="w-full h-2 bg-slate-100 rounded-full mt-3 overflow-hidden border border-slate-200/50">
@@ -722,6 +750,18 @@ export default function QuestionsPage() {
                 </table>
               </div>
             )
+          ) : activeTab === "docx" ? (
+            <DocxImportTab
+              qbId={qbId}
+              previewData={docxPreviewData}
+              setPreviewData={setDocxPreviewData}
+              items={docxItems}
+              setItems={setDocxItems}
+              onImportComplete={() => {
+                void refreshQuestions();
+                setActiveTab("questions");
+              }}
+            />
           ) : (
             <CsvImportTab qbId={qbId} onImported={() => {
               void refreshQuestions();

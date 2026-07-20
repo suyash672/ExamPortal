@@ -3,10 +3,11 @@ import { z } from "zod";
 const createMcqSchemaBase = z.object({
   qbId: z.string().regex(/^[a-fA-F0-9]{24}$/),
   type: z.literal("MCQ"),
-  questionText: z.string().trim().min(5).max(1000),
+  questionText: z.string().trim().max(1000).default(""),
   imageUrl: z.string().trim().optional().nullable(),
   options: z.array(z.object({
-    optionText: z.string().trim().min(1).max(500),
+    optionText: z.string().trim().max(500).default(""),
+    imageUrl: z.string().trim().optional().nullable(),
     scorePercent: z.number().int().min(0).max(100)
   })).min(2).max(6)
 });
@@ -14,7 +15,7 @@ const createMcqSchemaBase = z.object({
 const createTextSchemaBase = z.object({
   qbId: z.string().regex(/^[a-fA-F0-9]{24}$/),
   type: z.literal("TEXT"),
-  questionText: z.string().trim().min(5).max(1000),
+  questionText: z.string().trim().max(1000).default(""),
   imageUrl: z.string().trim().optional().nullable(),
   acceptedAnswers: z.array(
     z
@@ -27,7 +28,8 @@ const createTextSchemaBase = z.object({
 });
 
 export const mcqOptionSchema = z.object({
-  optionText: z.string().trim().min(1).max(500),
+  optionText: z.string().trim().max(500).default(""),
+  imageUrl: z.string().trim().optional().nullable(),
   scorePercent: z.number().int().min(0).max(100)
 });
 

@@ -1,0 +1,84 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    html, body {
+      overflow: hidden !important;
+      margin: 0;
+      padding: 0;
+      background: transparent;
+    }
+    body {
+      font-family: 'Segoe UI', -apple-system, system-ui, Roboto, sans-serif;
+      padding: 12px;
+      width: 900px;
+    }
+    .card {
+      background: #ffffff;
+      border: 2px solid #cbd5e1;
+      border-radius: 20px;
+      padding: 24px 28px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.06);
+      color: #0f172a;
+      overflow: hidden;
+      width: 100%;
+      box-sizing: border-box;
+    }
+    .badge {
+      display: inline-block;
+      background: #0f766e;
+      color: #ffffff;
+      font-size: 13px;
+      font-weight: 700;
+      padding: 5px 14px;
+      border-radius: 9999px;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-bottom: 16px;
+    }
+    .question-text {
+      font-size: 21px;
+      line-height: 1.65;
+      font-weight: 600;
+      color: #1e293b;
+      margin-bottom: 16px;
+    }
+    .options-container {
+      margin-top: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .option-item {
+      background: #f8fafc;
+      border: 1.5px solid #cbd5e1;
+      border-radius: 14px;
+      padding: 12px 18px;
+      font-size: 19px;
+      color: #1e293b;
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+    }
+    .option-key {
+      font-weight: 800;
+      color: #0f766e;
+      min-width: 26px;
+    }
+    .option-val {
+      font-weight: 500;
+      line-height: 1.55;
+    }
+    sub { font-size: 0.75em; vertical-align: sub; }
+    sup { font-size: 0.75em; vertical-align: super; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="question-text">Overlap-Save</b><br>Filter length =129<br>FFT length =512<br>Signal length =5000<br>Which statements are correct?</div>
+    <div class="options-container"><div class="option-item"><span class="option-key">A)</span><span class="option-val">Useful output/block =384</span></div><div class="option-item"><span class="option-key">B)</span><span class="option-val">Overlap =128 samples</span></div><div class="option-item"><span class="option-key">C)</span><span class="option-val">Number of blocks =14</span></div><div class="option-item"><span class="option-key">D)</span><span class="option-val">Total FFTs=14</span></div></div>
+  </div>
+</body>
+</html>

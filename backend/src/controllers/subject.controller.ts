@@ -139,42 +139,56 @@ export async function deleteSubject(
         const aqIds = attemptQuestions.map((aq) => aq.id);
 
         // 4. Delete AttemptAnswerOptions linked to the MCQ options
-        await tx.attemptAnswerOption.deleteMany({
-          where: { mcqOptionId: { in: mcqOptionIds } }
-        });
+        if (mcqOptionIds.length > 0) {
+          await tx.attemptAnswerOption.deleteMany({
+            where: { mcqOptionId: { in: mcqOptionIds } }
+          });
+        }
 
         // 5. Delete AttemptAnswers linked to the AttemptQuestions
-        await tx.attemptAnswer.deleteMany({
-          where: { attemptQuestionId: { in: aqIds } }
-        });
+        if (aqIds.length > 0) {
+          await tx.attemptAnswer.deleteMany({
+            where: { attemptQuestionId: { in: aqIds } }
+          });
+        }
 
         // 6. Delete AttemptQuestions themselves
-        await tx.attemptQuestion.deleteMany({
-          where: { id: { in: aqIds } }
-        });
+        if (aqIds.length > 0) {
+          await tx.attemptQuestion.deleteMany({
+            where: { id: { in: aqIds } }
+          });
+        }
 
-        // 7. Delete TestQbRules referencing the question banks (removes rules/sections from tests)
-        await tx.testQbRule.deleteMany({
-          where: { qbId: { in: qbIds } }
-        });
+        // 7. Delete TestQbRules referencing the question banks
+        if (qbIds.length > 0) {
+          await tx.testQbRule.deleteMany({
+            where: { qbId: { in: qbIds } }
+          });
+        }
 
         // 8. Delete MCQ options and text accepted answers of the questions
-        await tx.mcqOption.deleteMany({
-          where: { questionId: { in: questionIds } }
-        });
-        await tx.textAcceptedAnswer.deleteMany({
-          where: { questionId: { in: questionIds } }
-        });
+        if (questionIds.length > 0) {
+          await tx.mcqOption.deleteMany({
+            where: { questionId: { in: questionIds } }
+          });
+          await tx.textAcceptedAnswer.deleteMany({
+            where: { questionId: { in: questionIds } }
+          });
+        }
 
         // 9. Delete questions
-        await tx.question.deleteMany({
-          where: { qbId: { in: qbIds } }
-        });
+        if (qbIds.length > 0) {
+          await tx.question.deleteMany({
+            where: { qbId: { in: qbIds } }
+          });
+        }
 
         // 10. Delete question banks
-        await tx.questionBank.deleteMany({
-          where: { moduleId: { in: moduleIds } }
-        });
+        if (moduleIds.length > 0) {
+          await tx.questionBank.deleteMany({
+            where: { moduleId: { in: moduleIds } }
+          });
+        }
 
         // 11. Delete modules
         await tx.module.deleteMany({

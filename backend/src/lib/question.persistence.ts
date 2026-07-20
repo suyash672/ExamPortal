@@ -7,7 +7,7 @@ export type QuestionInput =
       type: "MCQ";
       questionText: string;
       imageUrl?: string | null;
-      options: Array<{ optionText: string; scorePercent: number }>;
+      options: Array<{ optionText: string; imageUrl?: string | null; scorePercent: number }>;
     }
   | {
       qbId: string;
@@ -28,9 +28,10 @@ async function createRelatedRecords(tx: Prisma.TransactionClient, data: Question
   if (data.type === "MCQ") {
     if (data.options.length > 0) {
       await tx.mcqOption.createMany({
-        data: data.options.map((option: { optionText: string; scorePercent: number }) => ({
+        data: data.options.map((option: { optionText: string; imageUrl?: string | null; scorePercent: number }) => ({
           questionId,
           optionText: option.optionText,
+          imageUrl: option.imageUrl || null,
           scorePercent: option.scorePercent
         }))
       });

@@ -8,6 +8,7 @@ import {
   saveAnswerSchema,
   submitAttemptSchema
 } from "../validators/student.validators";
+import { calculateScoreCard } from "./results.controller";
 
 const prisma = new PrismaClient();
 
@@ -99,7 +100,8 @@ function serializeAttempt(attempt: any, now: Date) {
               ? (() => {
                   const opts = item.question.mcqOptions.map((option: any) => ({
                     id: option.id,
-                    optionText: option.optionText
+                    optionText: option.optionText,
+                    imageUrl: option.imageUrl
                   }));
                   if (shuffleOptions) {
                     return stableShuffle(opts, attempt.id, (opt: any) => opt.id);
@@ -187,7 +189,10 @@ export async function getAvailableTests(
 
   const tests = await prisma.test.findMany({
     where: {
-      endTime: { gt: now }
+      OR: [
+        { endTime: { gt: now } },
+        { enrollments: { some: { studentId: req.user.id } } }
+      ]
     },
     include: {
       enrollments: {
@@ -804,20 +809,33 @@ async function deleteAttemptInternal(attemptId: string) {
 
   const answerIds = attemptQuestions.map(aq => aq.answer?.id).filter((id): id is string => !!id);
 
-  await prisma.$transaction([
-    prisma.attemptAnswerOption.deleteMany({
-      where: { attemptAnswerId: { in: answerIds } }
-    }),
-    prisma.attemptAnswer.deleteMany({
-      where: { id: { in: answerIds } }
-    }),
+  const deletePromises: any[] = [];
+  if (answerIds.length > 0) {
+    deletePromises.push(
+      prisma.attemptAnswerOption.deleteMany({
+        where: { attemptAnswerId: { in: answerIds } }
+      })
+    );
+    deletePromises.push(
+      prisma.attemptAnswer.deleteMany({
+        where: { id: { in: answerIds } }
+      })
+    );
+  }
+
+  deletePromises.push(
     prisma.attemptQuestion.deleteMany({
       where: { attemptId }
-    }),
+    })
+  );
+
+  deletePromises.push(
     prisma.attempt.delete({
       where: { id: attemptId }
     })
-  ]);
+  );
+
+  await prisma.$transaction(deletePromises);
 }
 
 export async function getTestPreview(
@@ -1093,6 +1111,12 @@ export async function getStudentAttemptReview(
                 qbId: true,
                 type: true,
                 questionText: true,
+                questionBank: {
+                  select: {
+                    name: true,
+                    type: true
+                  }
+                },
                 mcqOptions: {
                   select: {
                     id: true,
@@ -1131,6 +1155,8 @@ export async function getStudentAttemptReview(
       test.testQbRules.map((rule: any) => [rule.qbId, rule.marksPerQuestion])
     );
 
+    const scorecard = await calculateScoreCard(attempt.id, attempt.enrollment.student.id, test.id);
+
     res.status(200).json({
       id: attempt.id,
       testId: test.id,
@@ -1143,6 +1169,7 @@ export async function getStudentAttemptReview(
       score: attempt.score,
       totalMarks: test.totalMarks,
       activities: [],
+      scorecard,
       student: {
         id: attempt.enrollment.student.id,
         name: attempt.enrollment.student.name,
@@ -1187,9 +1214,13 @@ export async function getStudentAttemptReview(
             id: item.question.id,
             text: item.question.questionText,
             type: item.question.type,
+            qbId: item.question.qbId,
+            qbName: (item.question as any).questionBank?.name ?? "Default",
+            qbType: (item.question as any).questionBank?.type ?? "easy",
             mcqOptions: item.question.mcqOptions.map((option: any) => ({
               id: option.id,
               optionText: option.optionText,
+              imageUrl: option.imageUrl,
               isCorrect: option.scorePercent === 100
             })),
             acceptedAnswers: item.question.acceptedAnswers.map((answer: any) => answer.answerText)

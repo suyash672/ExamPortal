@@ -29,7 +29,8 @@ export async function getQbs(
               // MongoDB stores null as an absent field; isSet:false matches
               // not-deleted questions (deletedAt: null fails to match).
               where: { deletedAt: { isSet: false } }
-            }
+            },
+            testQbRules: true
           }
         }
       },
@@ -98,36 +99,57 @@ export async function deleteQb(
   next: NextFunction
 ): Promise<void> {
   try {
-    const qbId = getParamAsString(req.params.id);
+    const rawId = req.params.id;
+    const qbId = Array.isArray(rawId) ? rawId[0] : (rawId || "");
 
     if (!qbId) {
       throw new AppError("Question bank id is required", 400);
     }
 
-    const ruleCount = await prisma.testQbRule.count({
-      where: { qbId }
-    });
+    let targetQbId = qbId;
+    let qbRecord = null;
 
-    if (ruleCount > 0) {
-      throw new AppError("This question bank is used in a test and cannot be deleted", 400);
+    if (qbId.match(/^[a-fA-F0-9]{24}$/)) {
+      qbRecord = await prisma.questionBank.findUnique({ where: { id: qbId } });
+    } else {
+      qbRecord = await prisma.questionBank.findFirst({ where: { name: qbId } });
     }
 
-    const activeQuestionCount = await prisma.question.count({
-      where: {
-        qbId,
-        deletedAt: { isSet: false }
-      }
-    });
+    if (!qbRecord) {
+      throw new AppError("Question bank not found", 404);
+    }
+    targetQbId = qbRecord.id;
 
-    if (activeQuestionCount > 0) {
-      throw new AppError("Delete all questions first", 400);
+    // 1. Delete associated McqOptions & TextAcceptedAnswers
+    const questions = await prisma.question.findMany({
+      where: { qbId: targetQbId },
+      select: { id: true }
+    });
+    const questionIds = questions.map((q) => q.id);
+
+    if (questionIds.length > 0) {
+      await prisma.mcqOption.deleteMany({
+        where: { questionId: { in: questionIds } }
+      });
+      await prisma.textAcceptedAnswer.deleteMany({
+        where: { questionId: { in: questionIds } }
+      });
+      await prisma.question.deleteMany({
+        where: { id: { in: questionIds } }
+      });
     }
 
+    // 2. Delete associated TestQbRule entries
+    await prisma.testQbRule.deleteMany({
+      where: { qbId: targetQbId }
+    });
+
+    // 3. Delete Question Bank record
     await prisma.questionBank.delete({
-      where: { id: qbId }
+      where: { id: targetQbId }
     });
 
-    res.status(200).json({ message: "Question bank deleted" });
+    res.status(200).json({ message: "Question bank deleted successfully" });
   } catch (error) {
     next(error);
   }

@@ -16,6 +16,52 @@ export type TestResultItem = {
   }>;
 };
 
+export type ScoreCardSection = {
+  moduleName: string;
+  type: string;
+  studentScore: number;
+  maxMarks: number;
+  classAvg: number | null;
+  historicalAvg: number | null;
+};
+
+export type StudentAttemptSummary = {
+  totalAttemptsCount: number;
+  bestScore: number;
+  averageScore: number;
+  attemptsList: Array<{
+    id: string;
+    attemptNumber: number;
+    score: number | null;
+    startedAt: string;
+    submittedAt: string | null;
+    isSubmitted: boolean;
+    isBlocked: boolean;
+  }>;
+};
+
+export type StudentModuleStat = {
+  moduleId: string;
+  moduleName: string;
+  subjectName: string;
+  questionsAttempted: number;
+  totalMarks: number;
+  earnedScore: number;
+  accuracyPercent: number;
+};
+
+export type StudentBankStat = {
+  qbId: string;
+  qbName: string;
+  difficulty: string;
+  moduleName: string;
+  questionsAttempted: number;
+  marksPerQuestion: number;
+  totalMarks: number;
+  earnedScore: number;
+  accuracyPercent: number;
+};
+
 export type AttemptDetail = {
   id: string;
   testId: string;
@@ -27,6 +73,10 @@ export type AttemptDetail = {
   submittedAt: string | null;
   score: number | null;
   totalMarks: number;
+  scorecard?: ScoreCardSection[];
+  studentSummary?: StudentAttemptSummary;
+  moduleStats?: StudentModuleStat[];
+  bankStats?: StudentBankStat[];
   student: {
     id: string;
     name: string;
@@ -43,9 +93,13 @@ export type AttemptDetail = {
       id: string;
       text: string;
       type: "MCQ" | "TEXT";
+      qbId: string;
+      qbName: string;
+      qbType: string;
       mcqOptions: Array<{
         id: string;
         optionText: string;
+        imageUrl?: string | null;
         isCorrect: boolean;
       }>;
       acceptedAnswers: string[];

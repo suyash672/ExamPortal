@@ -7,6 +7,8 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { useAuth } from "../../../context/AuthContext";
 
+import { useState } from "react";
+
 const loginFormSchema = z.object({
   email: z.string().email("Enter a valid email address."),
   password: z.string().min(1, "Password is required."),
@@ -18,6 +20,7 @@ type LoginFormValues = z.infer<typeof loginFormSchema>;
 export default function LoginPage() {
   const router = useRouter();
   const { login, loading } = useAuth();
+  const [showPassword, setShowPassword] = useState(false);
 
   const {
     register,
@@ -101,13 +104,23 @@ export default function LoginPage() {
           <label className="text-sm font-medium" htmlFor="password">
             Password
           </label>
-          <input
-            id="password"
-            type="password"
-            autoComplete="current-password"
-            className="w-full rounded-xl border border-[var(--border)] bg-white px-3 py-2.5 text-sm transition focus:border-[var(--ring)] focus:ring-2 focus:ring-[var(--ring)]/30"
-            {...register("password")}
-          />
+          <div className="relative">
+            <input
+              id="password"
+              type={showPassword ? "text" : "password"}
+              autoComplete="current-password"
+              className="w-full rounded-xl border border-[var(--border)] bg-white pl-3 pr-16 py-2.5 text-sm transition focus:border-[var(--ring)] focus:ring-2 focus:ring-[var(--ring)]/30"
+              {...register("password")}
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword((prev) => !prev)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-slate-500 hover:text-slate-900 transition cursor-pointer select-none"
+              aria-label={showPassword ? "Hide password" : "Show password"}
+            >
+              {showPassword ? "👁️ Hide" : "👁️ Show"}
+            </button>
+          </div>
           {errors.password ? (
             <p className="text-xs text-[var(--danger)]">{errors.password.message}</p>
           ) : null}

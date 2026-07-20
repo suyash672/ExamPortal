@@ -13,6 +13,7 @@ import {
 import { importCsv } from "../controllers/questioncsv.controller";
 import { importMoodleHtml } from "../controllers/questionhtml.controller";
 import { importDocx } from "../controllers/questiondocx.controller";
+import { previewDocxImport, commitDocxImport } from "../controllers/docxImport.controller";
 import { requireAuth, requireRole } from "../middleware/auth";
 import { requireQbOwnership, requireQuestionOwnership } from "../middleware/ownership";
 import { validate } from "../middleware/validate";
@@ -93,6 +94,19 @@ questionRouter.post(
     })
   ),
   importDocx
+);
+
+questionRouter.post(
+  "/api/banks/:qbId/docx-preview",
+  requireQbOwnership,
+  upload.single("file"),
+  previewDocxImport
+);
+
+questionRouter.post(
+  "/api/banks/:qbId/docx-commit",
+  requireQbOwnership,
+  commitDocxImport
 );
 
 export default questionRouter;

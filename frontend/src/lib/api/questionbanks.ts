@@ -8,6 +8,7 @@ export type QuestionBankRecord = {
   createdAt: string;
   _count?: {
     questions: number;
+    testQbRules?: number;
   };
 };
 

@@ -48,6 +48,7 @@ export type BeginTestQuestion = {
     mcqOptions: Array<{
       id: string;
       optionText: string;
+      imageUrl?: string | null;
     }>;
   };
   answer: {

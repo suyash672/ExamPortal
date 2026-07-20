@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { TestSettingsModal } from "@/components/teacher/TestSettingsModal";
 import { useToast } from "@/components/ui/ToastProvider";
 import { getApiErrorMessage } from "@/lib/apiError";
 import { deleteTest, getTests, type TestListItem, type TestStatus } from "@/lib/api/tests";
@@ -61,6 +62,8 @@ export default function TeacherTestsPage() {
   const [error, setError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<TestListItem | null>(null);
+  const [selectedTest, setSelectedTest] = useState<TestListItem | null>(null);
+  const [settingsModalOpen, setSettingsModalOpen] = useState(false);
   const [createDropdownOpen, setCreateDropdownOpen] = useState(false);
 
   const loadTests = useCallback(async () => {
@@ -259,11 +262,18 @@ export default function TeacherTestsPage() {
                           Preview
                         </Link>
 
+                        <Link
+                          href={`/dashboard/tests/${test.id}/settings`}
+                          className="rounded-xl border border-teal-200 bg-teal-50 px-3 py-2 text-sm font-bold text-teal-800 transition hover:bg-teal-100 shadow-2xs"
+                        >
+                          ⚙️ Settings
+                        </Link>
+
                         <button
                           type="button"
                           onClick={() => setPendingDelete(test)}
                           disabled={test.isLocked || deletingId === test.id}
-                          className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-rose-50 hover:text-rose-600 disabled:cursor-not-allowed disabled:opacity-60"
+                          className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-rose-50 hover:text-rose-600 disabled:cursor-not-allowed disabled:opacity-60 cursor-pointer"
                         >
                           {deletingId === test.id ? "Deleting..." : "Delete"}
                         </button>
@@ -275,6 +285,13 @@ export default function TeacherTestsPage() {
           </table>
         </div>
       )}
+
+      <TestSettingsModal
+        open={settingsModalOpen}
+        test={selectedTest}
+        onOpenChange={setSettingsModalOpen}
+        onUpdated={() => void loadTests()}
+      />
 
       <ConfirmDialog
         open={Boolean(pendingDelete)}

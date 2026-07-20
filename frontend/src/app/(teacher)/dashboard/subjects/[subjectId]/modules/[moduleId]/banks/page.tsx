@@ -421,8 +421,33 @@ export default function QuestionBanksPage() {
 
       <ConfirmDialog
         open={Boolean(pendingDelete)}
-        title="Delete question bank"
-        message={`Delete question bank "${pendingDelete?.name ?? ""}"?`}
+        title="Delete Question Bank"
+        message={
+          pendingDelete ? (
+            <div className="space-y-3">
+              {(pendingDelete._count?.testQbRules ?? 0) > 0 ? (
+                <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3.5 text-xs text-amber-900 space-y-1.5">
+                  <p className="font-bold flex items-center gap-1.5 text-amber-950">
+                    ⚠️ Linked Test Warning
+                  </p>
+                  <p>
+                    Question bank <strong>"{pendingDelete.name}"</strong> is currently linked to{" "}
+                    <strong>{pendingDelete._count?.testQbRules} active test(s)</strong>. Deleting it will remove this bank from future test attempt rules.
+                  </p>
+                </div>
+              ) : (
+                <p>Are you sure you want to delete question bank <strong>"{pendingDelete.name}"</strong>?</p>
+              )}
+
+              <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-3 text-xs text-emerald-900 flex items-start gap-2">
+                <span className="text-emerald-600 font-bold text-sm">✓</span>
+                <p>
+                  <strong>Historical Data Safety:</strong> All completed student scorecards and test attempt records will remain <strong>100% preserved</strong>.
+                </p>
+              </div>
+            </div>
+          ) : null
+        }
         loading={Boolean(deletingId)}
         onCancel={() => setPendingDelete(null)}
         onConfirm={() => void handleDelete()}

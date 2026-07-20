@@ -5,7 +5,7 @@ import { Spinner } from "@/components/ui/Spinner";
 type ConfirmDialogProps = {
   open: boolean;
   title: string;
-  message: string;
+  message: React.ReactNode;
   confirmLabel?: string;
   cancelLabel?: string;
   loading?: boolean;
@@ -33,7 +33,7 @@ export function ConfirmDialog({
         <div className="mb-4">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--danger)]">Confirm action</p>
           <h3 className="mt-1 text-lg font-semibold text-slate-900">{title}</h3>
-          <p className="mt-2 text-sm text-slate-600">{message}</p>
+          <div className="mt-2 text-sm text-slate-600">{message}</div>
         </div>
 
         <div className="flex items-center justify-end gap-3">
